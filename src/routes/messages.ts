@@ -9,6 +9,10 @@ import { messageController } from '../controllers/messages.controller';
 import { validateRequest } from '../middleware/validate';
 import { authMiddleware } from '../middleware/auth';
 import { getDatabaseClient } from '../database';
+import { getRedisClient } from '../redis';
+
+// TTL du cache messages (secondes). Court pour rester cohérent avec le temps réel.
+const MSG_CACHE_TTL = 4;
 
 export const messagesRouter = Router();
 
@@ -35,6 +39,17 @@ messagesRouter.get('/',
       if (!conversationId) {
         return res.json([]);
       }
+
+      // ── Cache Redis ──────────────────────────────────────
+      const redis = getRedisClient();
+      const cacheKey = `msg:${conversationId}:${limit}:${before || ''}`;
+      try {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          res.setHeader('X-Cache', 'HIT');
+          return res.json(JSON.parse(cached));
+        }
+      } catch { /* cache miss, continue */ }
 
       const db = getDatabaseClient();
 
@@ -99,6 +114,12 @@ messagesRouter.get('/',
         },
       }));
 
+      // Écrire le résultat en cache Redis (fire-and-forget)
+      try {
+        await redis.set(cacheKey, JSON.stringify(messages), MSG_CACHE_TTL);
+      } catch { /* non-bloquant */ }
+
+      res.setHeader('X-Cache', 'MISS');
       res.json(messages);
     } catch (error) {
       console.error('Erreur récupération messages:', error);

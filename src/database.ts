@@ -18,10 +18,14 @@ export function getDatabaseClient(config?: DatabaseConfig) {
       user: config.user,
       password: config.password,
       database: config.database,
-      connectionLimit: 10,
+      connectionLimit: 30,
       charset: 'utf8mb4',
       waitForConnections: true,
       queueLimit: 0,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
+      connectTimeout: 10000,
+      idleTimeout: 60000,
     });
   }
   
@@ -167,6 +171,30 @@ export async function runMigrations(db: ReturnType<typeof getDatabaseClient>): P
     }
   } catch (e: any) {
     console.log('Index migration warning:', e?.message ?? e);
+  }
+
+  // Index composite pour la requête principale (conversation_id, is_deleted, created_at)
+  try {
+    const [idxRows2]: any = await db.execute(
+      `SELECT COUNT(*) as cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'messages' AND index_name = 'idx_messages_conv_deleted_created'`
+    );
+    if (!idxRows2 || idxRows2[0]?.cnt === 0) {
+      await db.execute(`CREATE INDEX idx_messages_conv_deleted_created ON messages (conversation_id, is_deleted, created_at DESC)`);
+    }
+  } catch (e: any) {
+    console.log('Index composite migration warning:', e?.message ?? e);
+  }
+
+  // Index sur message_reactions.message_id pour le batch fetch
+  try {
+    const [idxRows3]: any = await db.execute(
+      `SELECT COUNT(*) as cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'message_reactions' AND index_name = 'idx_reactions_message'`
+    );
+    if (!idxRows3 || idxRows3[0]?.cnt === 0) {
+      await db.execute(`CREATE INDEX idx_reactions_message ON message_reactions (message_id)`);
+    }
+  } catch (e: any) {
+    console.log('Index reactions migration warning:', e?.message ?? e);
   }
 
   // ALTER TABLE migrations pour colonnes manquantes sur tables existantes

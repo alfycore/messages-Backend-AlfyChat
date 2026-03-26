@@ -52,8 +52,6 @@ export class MessageService {
             [dto.conversationId, userId]
           );
         }
-
-        await new Promise(resolve => setTimeout(resolve, 50));
       } catch (error) {
         console.error('❌ Erreur création conversation DM:', error);
         throw error;

@@ -6,6 +6,7 @@ import { Request, Response } from 'express';
 import { MessageService } from '../services/messages.service';
 import { logger } from '../utils/logger';
 import { AuthRequest } from '../types/express';
+import { getRedisClient } from '../redis';
 
 const messageService = new MessageService();
 
@@ -26,6 +27,12 @@ export class MessageController {
 
       logger.info(`Message créé: ${message.id} (E2EE)`);
       res.status(201).json(message);
+
+      // Invalider le cache Redis pour cette conversation (fire-and-forget)
+      try {
+        const redis = getRedisClient();
+        await redis.del(`msg:${conversationId}:50:`);
+      } catch { /* non-bloquant */ }
     } catch (error: any) {
       logger.error('Erreur création message:', error);
       
