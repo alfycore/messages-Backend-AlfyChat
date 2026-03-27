@@ -30,10 +30,31 @@ messagesRouter.get('/',
       let conversationId: string | null = null;
 
       if (recipientId) {
+        // DM déterministe — le room ID inclut forcément userId
         const sortedIds = [userId, recipientId as string].sort();
         conversationId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
       } else if (channelId) {
-        conversationId = channelId as string;
+        const cid = channelId as string;
+
+        // Vérifier l'appartenance avant de servir les messages
+        if (cid.startsWith('dm_')) {
+          // Format dm_UUID1_UUID2 — vérifier que userId est l'un des deux
+          if (!cid.includes(userId)) {
+            return res.status(403).json({ error: 'Accès non autorisé' });
+          }
+        } else {
+          // Conversation UUID (groupe) — vérifier en base
+          const db = getDatabaseClient();
+          const [rows] = await db.query(
+            'SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND user_id = ? LIMIT 1',
+            [cid, userId]
+          );
+          if ((rows as any[]).length === 0) {
+            return res.status(403).json({ error: 'Accès non autorisé' });
+          }
+        }
+
+        conversationId = cid;
       }
 
       if (!conversationId) {
@@ -142,10 +163,34 @@ messagesRouter.post('/',
 
 // Récupérer les messages d'une conversation
 messagesRouter.get('/conversation/:conversationId',
+  authMiddleware,
   param('conversationId').isString().notEmpty(),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('before').optional().isISO8601(),
   validateRequest,
+  async (req, res, next) => {
+    try {
+      const userId = (req as any).userId;
+      const { conversationId } = req.params;
+      if (conversationId.startsWith('dm_')) {
+        if (!conversationId.includes(userId)) {
+          return res.status(403).json({ error: 'Accès non autorisé' });
+        }
+      } else {
+        const db = getDatabaseClient();
+        const [rows] = await db.query(
+          'SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND user_id = ? LIMIT 1',
+          [conversationId, userId]
+        );
+        if ((rows as any[]).length === 0) {
+          return res.status(403).json({ error: 'Accès non autorisé' });
+        }
+      }
+      next();
+    } catch {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
   messageController.getByConversation.bind(messageController)
 );
 

@@ -23,8 +23,9 @@ export class MessageService {
   }
 
   // Créer un message — accepte des ciphertexts Signal E2EE opaques
+  // Si dto.id est fourni (pré-généré par le gateway pour livraison optimiste), l'utilise directement.
   async create(dto: CreateMessageDTO): Promise<Message> {
-    const messageId = uuidv4();
+    const messageId = dto.id || uuidv4();
 
     // Récupérer les participants de la conversation
     let [participants] = await this.db.query(

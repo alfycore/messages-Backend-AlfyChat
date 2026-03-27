@@ -72,6 +72,8 @@ export interface ConversationParticipant {
 }
 
 export interface CreateMessageDTO {
+  /** ID pré-généré par le gateway pour la livraison optimiste (<2ms) */
+  id?: string;
   conversationId: string;
   senderId: string;
   /** Ciphertext Signal pour le destinataire (base64) */

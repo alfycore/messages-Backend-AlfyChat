@@ -101,6 +101,7 @@ conversationsRouter.post('/dm',
 
 // ============ GET /user/:userId — Conversations d'un utilisateur ============
 conversationsRouter.get('/user/:userId',
+  authMiddleware,
   param('userId').isString(),
   validateRequest,
   conversationController.getByUser.bind(conversationController)
@@ -122,6 +123,22 @@ conversationsRouter.patch('/:conversationId',
   body('avatarUrl').optional().isString(),
   validateRequest,
   conversationController.update.bind(conversationController)
+);
+
+// ============ GET /:conversationId/participants/:userId/check — Vérifier appartenance (interne) ============
+conversationsRouter.get('/:conversationId/participants/:userId/check',
+  param('conversationId').isString(),
+  param('userId').isString(),
+  validateRequest,
+  async (req, res) => {
+    try {
+      const { conversationId, userId } = req.params;
+      const isParticipant = await conversationService.isParticipant(conversationId, userId);
+      res.json({ isParticipant });
+    } catch {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
 );
 
 // ============ POST /:conversationId/participants — Ajouter un participant ============
