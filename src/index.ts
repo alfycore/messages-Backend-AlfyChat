@@ -13,6 +13,7 @@ import { archiveRouter } from './routes/archive';
 import { getDatabaseClient, runMigrations } from './database';
 import { getRedisClient } from './redis';
 import { dmArchiveService } from './services/dm-archive.service';
+import { startServiceRegistration, serviceMetricsMiddleware } from './utils/service-client';
 import { logger } from './utils/logger';
 
 dotenv.config();
@@ -25,6 +26,7 @@ app.use(cors({
 }));
 app.use(helmet());
 app.use(express.json());
+app.use(serviceMetricsMiddleware);
 
 // Routes
 app.use('/messages', messagesRouter);
@@ -57,6 +59,7 @@ async function start() {
     const PORT = process.env.PORT || 3002;
     app.listen(PORT, () => {
       logger.info(`🚀 Service Messages démarré sur le port ${PORT}`);
+      startServiceRegistration('messages');
 
       // Lancer la maintenance quotidienne DM (toutes les 24h)
       const MAINTENANCE_INTERVAL = 24 * 60 * 60 * 1000; // 24h
