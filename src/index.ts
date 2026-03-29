@@ -13,7 +13,7 @@ import { archiveRouter } from './routes/archive';
 import { getDatabaseClient, runMigrations } from './database';
 import { getRedisClient } from './redis';
 import { dmArchiveService } from './services/dm-archive.service';
-import { startServiceRegistration, serviceMetricsMiddleware } from './utils/service-client';
+import { startServiceRegistration, serviceMetricsMiddleware, collectServiceMetrics } from './utils/service-client';
 import { logger } from './utils/logger';
 
 dotenv.config();
@@ -36,6 +36,16 @@ app.use('/archive', archiveRouter);
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'messages' });
+});
+
+app.get('/metrics', (req, res) => {
+  res.json({
+    service: 'messages',
+    serviceId: process.env.SERVICE_ID || 'messages-default',
+    location: (process.env.SERVICE_LOCATION || 'EU').toUpperCase(),
+    ...collectServiceMetrics(),
+    uptime: process.uptime(),
+  });
 });
 
 async function start() {
