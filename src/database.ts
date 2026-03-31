@@ -155,6 +155,20 @@ export async function runMigrations(db: ReturnType<typeof getDatabaseClient>): P
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 
     // Index pour la purge par date (création conditionnelle gérée après)
+
+    // Table notifications — pings persistants en DB jusqu'à lecture
+    `CREATE TABLE IF NOT EXISTS notifications (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      conversation_id VARCHAR(100) NOT NULL,
+      sender_name VARCHAR(100) NOT NULL,
+      message_count INT UNSIGNED DEFAULT 1,
+      is_read BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_user_conv (user_id, conversation_id),
+      INDEX idx_user_unread (user_id, is_read)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   ];
 
   for (const sql of migrations) {

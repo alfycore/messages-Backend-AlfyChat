@@ -10,6 +10,7 @@ import dotenv from 'dotenv';
 import { messagesRouter } from './routes/messages';
 import { conversationsRouter } from './routes/conversations';
 import { archiveRouter } from './routes/archive';
+import { notificationsRouter } from './routes/notifications';
 import { getDatabaseClient, runMigrations } from './database';
 import { getRedisClient } from './redis';
 import { dmArchiveService } from './services/dm-archive.service';
@@ -32,6 +33,7 @@ app.use(serviceMetricsMiddleware);
 app.use('/messages', messagesRouter);
 app.use('/conversations', conversationsRouter);
 app.use('/archive', archiveRouter);
+app.use('/notifications', notificationsRouter);
 
 // Health check
 app.get('/health', (req, res) => {
