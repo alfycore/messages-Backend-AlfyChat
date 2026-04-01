@@ -17,7 +17,15 @@ const conversationService = new ConversationService();
 
 // ============ GET / — Toutes les conversations de l'utilisateur connecté ============
 conversationsRouter.get('/',
-  authMiddleware,
+  async (req, res, next) => {
+    // Accepter soit un JWT (frontend), soit un x-user-id header (appel gateway interne)
+    const internalUserId = req.headers['x-user-id'] as string | undefined;
+    if (internalUserId && !req.headers.authorization) {
+      (req as any).userId = internalUserId;
+      return next();
+    }
+    return authMiddleware(req, res, next);
+  },
   async (req, res) => {
     try {
       const userId = (req as any).userId;
