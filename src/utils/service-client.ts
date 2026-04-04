@@ -66,7 +66,11 @@ export function startServiceRegistration(serviceType: ServiceType): void {
   const SERVICE_LOCATION = (process.env.SERVICE_LOCATION || 'EU').toUpperCase();
   const PORT            = process.env.PORT            || '3000';
   const SERVICE_ENDPOINT = process.env.SERVICE_ENDPOINT || `http://localhost:${PORT}`;
-  const SERVICE_DOMAIN  = process.env.SERVICE_DOMAIN  || `localhost:${PORT}`;
+  // SERVICE_DOMAIN : si non défini, on déduit depuis SERVICE_ENDPOINT (retire le schéma)
+  const SERVICE_DOMAIN  = process.env.SERVICE_DOMAIN
+    || (() => {
+        try { return new URL(SERVICE_ENDPOINT).host; } catch { return `localhost:${PORT}`; }
+      })();
 
   async function register() {
     try {

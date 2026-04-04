@@ -58,7 +58,7 @@ notificationsRouter.get('/', authMiddleware, async (req, res) => {
     const userId = (req as any).userId as string;
     const db = getDatabaseClient();
 
-    const [rows]: any = await db.execute(
+    const [rows]: any = await db.query(
       `SELECT conversation_id, sender_name, message_count, created_at, updated_at
        FROM notifications
        WHERE user_id = ? AND is_read = FALSE
