@@ -161,6 +161,41 @@ messagesRouter.post('/',
   messageController.create.bind(messageController)
 );
 
+// Rechercher des messages dans une conversation (uniquement non-E2EE)
+messagesRouter.get('/search',
+  authMiddleware,
+  query('conversationId').isString().notEmpty(),
+  query('q').isString().isLength({ min: 1, max: 200 }),
+  query('limit').optional().isInt({ min: 1, max: 50 }),
+  query('before').optional().isISO8601(),
+  validateRequest,
+  async (req, res, next) => {
+    try {
+      const userId = (req as any).userId;
+      const conversationId = req.query.conversationId as string;
+      // Vérifier l'accès
+      if (conversationId.startsWith('dm_')) {
+        if (!conversationId.includes(userId)) {
+          return res.status(403).json({ error: 'Accès non autorisé' });
+        }
+      } else {
+        const db = getDatabaseClient();
+        const [rows] = await db.query(
+          'SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND user_id = ? LIMIT 1',
+          [conversationId, userId]
+        );
+        if ((rows as any[]).length === 0) {
+          return res.status(403).json({ error: 'Accès non autorisé' });
+        }
+      }
+      next();
+    } catch {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  },
+  messageController.search.bind(messageController)
+);
+
 // Récupérer les messages d'une conversation
 messagesRouter.get('/conversation/:conversationId',
   authMiddleware,

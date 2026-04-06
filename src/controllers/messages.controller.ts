@@ -11,6 +11,27 @@ import { getRedisClient } from '../redis';
 const messageService = new MessageService();
 
 export class MessageController {
+  // Rechercher des messages
+  async search(req: Request, res: Response) {
+    try {
+      const { conversationId, q, limit = '30', before } = req.query;
+      const userId = (req as any).userId || req.headers['x-user-id'] as string;
+
+      const messages = await messageService.search(
+        conversationId as string,
+        q as string,
+        userId,
+        parseInt(limit as string),
+        before as string | undefined,
+      );
+
+      res.json(messages);
+    } catch (error) {
+      logger.error('Erreur recherche messages:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
+
   // Créer un message
   async create(req: Request, res: Response) {
     try {

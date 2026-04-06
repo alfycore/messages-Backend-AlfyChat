@@ -22,6 +22,41 @@ export class MessageService {
     return getRedisClient();
   }
 
+  // Rechercher des messages dans une conversation (LIKE sur content, uniquement non-E2EE)
+  async search(conversationId: string, searchQuery: string, _userId: string, limit: number = 30, before?: string): Promise<Message[]> {
+    const safeLimit = Math.min(Math.max(Math.floor(limit) || 30, 1), 50);
+    const likePattern = `%${searchQuery.replace(/[%_\\]/g, '\\$&')}%`;
+
+    let query = `
+      SELECT m.id, m.conversation_id, m.sender_id,
+             m.content, m.sender_content, m.e2ee_type,
+             m.nonce, m.reply_to_id, m.is_edited, m.is_deleted,
+             m.created_at, m.updated_at,
+             u.username as sender_username, u.display_name as sender_display_name, u.avatar_url as sender_avatar
+      FROM messages m
+      JOIN users u ON m.sender_id = u.id
+      WHERE m.conversation_id = ? AND m.is_deleted = FALSE
+        AND m.e2ee_type IS NULL
+        AND m.content LIKE ?
+    `;
+    const params: any[] = [conversationId, likePattern];
+
+    if (before) {
+      query += ' AND m.created_at < ?';
+      params.push(before);
+    }
+
+    query += ` ORDER BY m.created_at DESC LIMIT ${safeLimit}`;
+
+    const [rows] = await this.db.query(query, params);
+    const messages = rows as any[];
+
+    return Promise.all(messages.map(async (msg) => {
+      const reactions = await this.getReactions(msg.id);
+      return this.formatMessage(msg, reactions);
+    }));
+  }
+
   // Créer un message — accepte des ciphertexts Signal E2EE opaques
   // Si dto.id est fourni (pré-généré par le gateway pour livraison optimiste), l'utilise directement.
   async create(dto: CreateMessageDTO): Promise<Message> {
