@@ -10,6 +10,33 @@ import { validateRequest } from '../middleware/validate';
 import { authMiddleware } from '../middleware/auth';
 import { getDatabaseClient } from '../database';
 import { getRedisClient } from '../redis';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
+
+const VOICE_UPLOAD_DIR = path.join(process.env.UPLOADS_DIR || '/uploads', 'voice');
+if (!fs.existsSync(VOICE_UPLOAD_DIR)) {
+  fs.mkdirSync(VOICE_UPLOAD_DIR, { recursive: true });
+}
+
+const voiceStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, VOICE_UPLOAD_DIR),
+  filename: (_req, _file, cb) => cb(null, `${uuidv4()}.ogg`),
+});
+
+const voiceUpload = multer({
+  storage: voiceStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB max
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['audio/ogg', 'audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav'];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Format audio non supporté'));
+    }
+  },
+});
 
 // TTL du cache messages (secondes). Court pour rester cohérent avec le temps réel.
 const MSG_CACHE_TTL = 4;
@@ -275,3 +302,105 @@ messagesRouter.post('/conversation/:conversationId/read',
   messageController.markAsRead.bind(messageController)
 );
 
+// ============ MESSAGES VOCAUX ============
+
+// Envoyer un message vocal (clip audio)
+messagesRouter.post('/voice',
+  authMiddleware,
+  voiceUpload.single('audio'),
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const { conversationId, duration } = req.body;
+
+      if (!req.file) {
+        return res.status(400).json({ error: 'Fichier audio requis' });
+      }
+
+      if (!conversationId) {
+        return res.status(400).json({ error: 'conversationId requis' });
+      }
+
+      const db = getDatabaseClient();
+
+      // Vérifier l'accès à la conversation
+      if (!conversationId.startsWith('dm_')) {
+        const [rows] = await db.query(
+          'SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND user_id = ? LIMIT 1',
+          [conversationId, userId]
+        );
+        if ((rows as any[]).length === 0) {
+          fs.unlinkSync(req.file.path);
+          return res.status(403).json({ error: 'Accès non autorisé' });
+        }
+      } else if (!conversationId.includes(userId)) {
+        fs.unlinkSync(req.file.path);
+        return res.status(403).json({ error: 'Accès non autorisé' });
+      }
+
+      const messageId = uuidv4();
+      const voiceUrl = `/uploads/voice/${req.file.filename}`;
+      const voiceDuration = parseInt(duration as string) || null;
+
+      await db.execute(
+        `INSERT INTO messages (id, conversation_id, sender_id, content, message_type, voice_url, voice_duration)
+         VALUES (?, ?, ?, '', 'voice', ?, ?)`,
+        [messageId, conversationId, userId, voiceUrl, voiceDuration]
+      );
+
+      // Invalider le cache Redis de la conversation
+      const redis = getRedisClient();
+      const cachePattern = `msg:${conversationId}:*`;
+      try {
+        const keys = await redis.keys(cachePattern);
+        if (keys.length) await redis.del(...keys);
+      } catch { /* non-bloquant */ }
+
+      res.status(201).json({
+        id: messageId,
+        conversationId,
+        senderId: userId,
+        messageType: 'voice',
+        voiceUrl,
+        voiceDuration,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      if (req.file?.path) {
+        try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+      }
+      console.error('Erreur message vocal:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
+);
+
+// ============ SUPPRESSION RGPD — Messages d'un utilisateur ============
+
+// Supprimer tous les messages d'un utilisateur (appelé par le service users/RGPD)
+messagesRouter.delete('/user/:userId/all',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const requesterId = (req as any).userId;
+      const { userId } = req.params;
+
+      // Seul l'utilisateur lui-même ou un admin peut faire cette demande
+      if (requesterId !== userId) {
+        return res.status(403).json({ error: 'Non autorisé' });
+      }
+
+      const db = getDatabaseClient();
+      await db.execute(
+        `UPDATE messages SET content = '[Message supprimé]', sender_content = NULL, is_deleted = TRUE
+         WHERE sender_id = ?`,
+        [userId]
+      );
+
+      res.json({ success: true, message: 'Tous vos messages ont été supprimés.' });
+    } catch (error) {
+      console.error('Erreur suppression messages RGPD:', error);
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
+);

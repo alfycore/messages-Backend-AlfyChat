@@ -279,4 +279,34 @@ export async function runMigrations(db: ReturnType<typeof getDatabaseClient>): P
   } catch (e: any) {
     console.log('DROP encryption_keys warning:', e.message);
   }
+
+  // ==========================================
+  // NOUVELLES FEATURES — MESSAGES VOCAUX & DMs ÉPINGLÉS
+  // ==========================================
+
+  // message_type: type de message (text, voice, image, file, system)
+  // voice_url: URL du clip audio pour les messages vocaux
+  // voice_duration: durée en secondes du message vocal
+  const msgNewCols = [
+    `ALTER TABLE messages ADD COLUMN message_type ENUM('text','voice','image','file','system') NOT NULL DEFAULT 'text'`,
+    `ALTER TABLE messages ADD COLUMN voice_url VARCHAR(500) NULL`,
+    `ALTER TABLE messages ADD COLUMN voice_duration INT NULL COMMENT 'Durée en secondes (messages vocaux)'`,
+  ];
+  for (const sql of msgNewCols) {
+    try { await db.execute(sql); } catch (e: any) {
+      if (e?.errno !== 1060 && e?.errno !== 1061) console.log('Messages new cols migration warning:', e?.message);
+    }
+  }
+
+  // pinned_conversations: DMs épinglés en haut de la liste (dupliqué ici pour accès local)
+  await db.execute(
+    `CREATE TABLE IF NOT EXISTS pinned_conversations (
+      user_id VARCHAR(36) NOT NULL,
+      conversation_id VARCHAR(100) NOT NULL,
+      pin_order INT DEFAULT 0,
+      pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, conversation_id),
+      INDEX idx_user_pinned (user_id, pin_order)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  );
 }

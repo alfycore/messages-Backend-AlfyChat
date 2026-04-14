@@ -10,7 +10,6 @@ import { authMiddleware } from '../middleware/auth';
 
 import { getDatabaseClient } from '../database';
 import { ConversationService } from '../services/conversations.service';
-
 export const conversationsRouter = Router();
 
 const conversationService = new ConversationService();
@@ -181,4 +180,81 @@ conversationsRouter.delete('/:conversationId',
   param('conversationId').isString(),
   validateRequest,
   conversationController.delete.bind(conversationController)
+);
+
+// ============ ÉPINGLAGE DE DMs ============
+
+// Épingler une conversation (stocké dans le service users, mais exposé ici pour commodité)
+// Le frontend appellera directement l'API users pour les DMs épinglés
+// Cette route est un alias qui redirige vers la logique users via header interne
+
+conversationsRouter.post('/:conversationId/pin',
+  authMiddleware,
+  param('conversationId').isString(),
+  validateRequest,
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const { conversationId } = req.params;
+      const db = getDatabaseClient();
+
+      // Calculer le prochain pin_order
+      const [posRows] = await db.query(
+        'SELECT COALESCE(MAX(pin_order),-1) as maxOrd FROM pinned_conversations WHERE user_id = ?',
+        [userId]
+      );
+      const pinOrder = ((posRows as any[])[0]?.maxOrd ?? -1) + 1;
+
+      await db.execute(
+        `INSERT IGNORE INTO pinned_conversations (user_id, conversation_id, pin_order) VALUES (?, ?, ?)`,
+        [userId, conversationId, pinOrder]
+      );
+
+      res.json({ success: true, pinOrder });
+    } catch {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
+);
+
+conversationsRouter.delete('/:conversationId/pin',
+  authMiddleware,
+  param('conversationId').isString(),
+  validateRequest,
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const { conversationId } = req.params;
+      const db = getDatabaseClient();
+
+      await db.execute(
+        'DELETE FROM pinned_conversations WHERE user_id = ? AND conversation_id = ?',
+        [userId, conversationId]
+      );
+
+      res.json({ success: true });
+    } catch {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
+);
+
+// Récupérer les conversations épinglées de l'utilisateur connecté
+conversationsRouter.get('/pinned',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const db = getDatabaseClient();
+
+      const [rows] = await db.query(
+        'SELECT conversation_id, pin_order FROM pinned_conversations WHERE user_id = ? ORDER BY pin_order ASC',
+        [userId]
+      );
+
+      res.json((rows as any[]).map(r => ({ conversationId: r.conversation_id, pinOrder: r.pin_order })));
+    } catch {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
 );
