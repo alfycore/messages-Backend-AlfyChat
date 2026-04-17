@@ -65,12 +65,9 @@ export function startServiceRegistration(serviceType: ServiceType): void {
   const SERVICE_ID      = process.env.SERVICE_ID      || `${serviceType}-default`;
   const SERVICE_LOCATION = (process.env.SERVICE_LOCATION || 'EU').toUpperCase();
   const PORT            = process.env.PORT            || '3000';
-  const SERVICE_ENDPOINT = process.env.SERVICE_ENDPOINT || `http://localhost:${PORT}`;
-  // SERVICE_DOMAIN : si non défini, on déduit depuis SERVICE_ENDPOINT (retire le schéma)
-  const SERVICE_DOMAIN  = process.env.SERVICE_DOMAIN
-    || (() => {
-        try { return new URL(SERVICE_ENDPOINT).host; } catch { return `localhost:${PORT}`; }
-      })();
+  const SERVICE_ENDPOINT = process.env.SERVICE_ENDPOINT || `http://${serviceType}:${PORT}`;
+  // SERVICE_DOMAIN : si non défini, on utilise le serviceType (= nom du conteneur Docker)
+  const SERVICE_DOMAIN  = process.env.SERVICE_DOMAIN || serviceType;
 
   async function register() {
     try {

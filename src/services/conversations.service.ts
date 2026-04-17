@@ -82,11 +82,19 @@ export class ConversationService {
   async getByUser(userId: string): Promise<Conversation[]> {
     const result = await this.db.query(
       `SELECT c.id, c.type, c.name, c.avatar_url, c.owner_id,
-              c.created_at, c.updated_at
+              c.created_at, c.updated_at,
+              lm.content  AS last_message,
+              lm.created_at AS last_message_at
        FROM conversations c
        JOIN conversation_participants cp ON c.id = cp.conversation_id
+       LEFT JOIN messages lm ON lm.id = (
+         SELECT id FROM messages
+         WHERE conversation_id = c.id
+         ORDER BY created_at DESC
+         LIMIT 1
+       )
        WHERE cp.user_id = ?
-       ORDER BY c.updated_at DESC`,
+       ORDER BY COALESCE(lm.created_at, c.updated_at) DESC`,
       [userId]
     );
     const rows = extractRows(result);
@@ -104,6 +112,8 @@ export class ConversationService {
         participantIds: participants.map((p: ConversationParticipant) => p.userId),
         createdAt: conv.created_at,
         updatedAt: conv.updated_at,
+        lastMessage: conv.last_message ?? null,
+        lastMessageAt: conv.last_message_at ?? conv.updated_at,
       } as Conversation;
     }));
   }

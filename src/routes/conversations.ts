@@ -53,6 +53,8 @@ conversationsRouter.get('/',
           participants: conv.participants,
           createdAt: conv.createdAt,
           updatedAt: conv.updatedAt,
+          lastMessage: (conv as any).lastMessage ?? null,
+          lastMessageAt: (conv as any).lastMessageAt ?? conv.updatedAt,
         };
       });
       
