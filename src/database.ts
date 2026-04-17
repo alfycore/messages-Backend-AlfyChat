@@ -18,14 +18,14 @@ export function getDatabaseClient(config?: DatabaseConfig) {
       user: config.user,
       password: config.password,
       database: config.database,
-      connectionLimit: 30,
+      connectionLimit: 10,
       charset: 'utf8mb4',
       waitForConnections: true,
       queueLimit: 0,
       enableKeepAlive: true,
       keepAliveInitialDelay: 0,
       connectTimeout: 10000,
-      idleTimeout: 60000,
+      idleTimeout: 30000,
     });
   }
   
