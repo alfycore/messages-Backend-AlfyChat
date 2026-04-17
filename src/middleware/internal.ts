@@ -18,8 +18,12 @@ function safeCompare(a: string, b: string): boolean {
 }
 
 export function internalOnly(req: Request, res: Response, next: NextFunction): void {
+  // Si INTERNAL_SECRET n'est pas configuré, on laisse passer (mode sans auth inter-services)
+  if (!INTERNAL_SECRET) {
+    return next();
+  }
   const secret = req.headers['x-internal-secret'] as string | undefined;
-  if (!INTERNAL_SECRET || !safeCompare(secret || '', INTERNAL_SECRET)) {
+  if (!safeCompare(secret || '', INTERNAL_SECRET)) {
     res.status(403).json({ error: 'Accès interdit — réservé aux services internes' });
     return;
   }
