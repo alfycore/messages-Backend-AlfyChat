@@ -98,10 +98,40 @@ export class ConversationService {
       [userId]
     );
     const rows = extractRows(result);
+    if (rows.length === 0) return [];
 
-    return Promise.all(rows.map(async (conv: any) => {
-      const participants = await this.getParticipants(conv.id);
+    // Charger TOUS les participants en une seule requête (évite le N+1)
+    const convIds = rows.map((r: any) => r.id);
+    const placeholders = convIds.map(() => '?').join(',');
+    const participantsResult = await this.db.query(
+      `SELECT cp.conversation_id, cp.user_id, cp.role, cp.joined_at, cp.last_read_at,
+              u.username, u.display_name, u.avatar_url, u.is_online
+       FROM conversation_participants cp
+       LEFT JOIN users u ON cp.user_id = u.id
+       WHERE cp.conversation_id IN (${placeholders})`,
+      convIds
+    );
+    const allParticipants = extractRows(participantsResult);
 
+    // Grouper les participants par conversation_id
+    const participantsByConv = new Map<string, ConversationParticipant[]>();
+    for (const p of allParticipants) {
+      const list = participantsByConv.get(p.conversation_id) ?? [];
+      list.push({
+        userId: p.user_id,
+        role: p.role || 'member',
+        joinedAt: p.joined_at,
+        lastReadAt: p.last_read_at,
+        username: p.username,
+        displayName: p.display_name,
+        avatarUrl: p.avatar_url,
+        isOnline: !!p.is_online,
+      });
+      participantsByConv.set(p.conversation_id, list);
+    }
+
+    return rows.map((conv: any) => {
+      const participants = participantsByConv.get(conv.id) ?? [];
       return {
         id: conv.id,
         type: conv.type === 'direct' ? 'dm' : conv.type,
@@ -115,7 +145,7 @@ export class ConversationService {
         lastMessage: conv.last_message ?? null,
         lastMessageAt: conv.last_message_at ?? conv.updated_at,
       } as Conversation;
-    }));
+    });
   }
 
   async findOrCreateDM(userId1: string, userId2: string): Promise<Conversation> {
