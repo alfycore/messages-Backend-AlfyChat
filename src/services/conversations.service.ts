@@ -107,7 +107,7 @@ export class ConversationService {
     );
     const allParticipants = extractRows(participantsResult);
 
-    // Requête 3 : dernier message par conversation (batch, utilise idx_messages_conv_created)
+    // Requête 3 : dernier message par conversation (batch, compatible only_full_group_by)
     const lastMsgResult = await this.db.query(
       `SELECT m.conversation_id, m.content, m.created_at
        FROM messages m
@@ -117,8 +117,7 @@ export class ConversationService {
          WHERE conversation_id IN (${placeholders})
          GROUP BY conversation_id
        ) latest ON m.conversation_id = latest.conversation_id
-              AND m.created_at = latest.max_ts
-       GROUP BY m.conversation_id`,
+              AND m.created_at = latest.max_ts`,
       convIds
     );
     const lastMessages = extractRows(lastMsgResult);
