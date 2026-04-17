@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { authMiddleware } from '../middleware/auth';
+import { internalOnly } from '../middleware/internal';
 import { getDatabaseClient } from '../database';
 
 export const notificationsRouter = Router();
@@ -16,7 +17,7 @@ export const notificationsRouter = Router();
  * Appelé par le gateway après l'envoi d'un message.
  * Auth : x-user-id header (service interne)
  */
-notificationsRouter.post('/', async (req, res) => {
+notificationsRouter.post('/', internalOnly, async (req, res) => {
   try {
     const { userId, conversationId, senderName } = req.body as {
       userId?: string;

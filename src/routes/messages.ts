@@ -8,6 +8,7 @@ import { body, query, param } from 'express-validator';
 import { messageController } from '../controllers/messages.controller';
 import { validateRequest } from '../middleware/validate';
 import { authMiddleware } from '../middleware/auth';
+import { internalOnly } from '../middleware/internal';
 import { getDatabaseClient } from '../database';
 import { getRedisClient } from '../redis';
 import multer from 'multer';
@@ -176,8 +177,9 @@ messagesRouter.get('/',
   }
 );
 
-// Créer un message Signal E2EE
+// Créer un message Signal E2EE (appel interne gateway → messages)
 messagesRouter.post('/',
+  internalOnly,
   body('conversationId').isString().notEmpty(),
   body('senderId').isUUID(),
   body('content').notEmpty().isLength({ max: 65535 }),       // ciphertext Signal
