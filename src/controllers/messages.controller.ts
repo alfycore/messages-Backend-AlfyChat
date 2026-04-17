@@ -35,9 +35,10 @@ export class MessageController {
   // Créer un message
   async create(req: Request, res: Response) {
     try {
-      const { conversationId, senderId, content, senderContent, e2eeType, replyToId } = req.body;
+      const { id, conversationId, senderId, content, senderContent, e2eeType, replyToId } = req.body;
 
       const message = await messageService.create({
+        id,
         conversationId,
         senderId,
         content,

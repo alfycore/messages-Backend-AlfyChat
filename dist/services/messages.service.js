@@ -89,11 +89,17 @@ class MessageService {
             dto.replyToId ?? null,
         ]);
         await this.db.execute('UPDATE conversations SET updated_at = NOW() WHERE id = ?', [dto.conversationId]);
-        // Système hybride DM : vérifier quota après création
+        // Système hybride DM : vérifier quota après création (fire-and-forget — non bloquant)
         let archiveEvent = null;
         if (dto.conversationId.startsWith('dm_')) {
-            await this.redis.del(`dm:stats:${dto.conversationId}`);
-            archiveEvent = await dmArchiveService.checkAndArchiveAfterCreate(dto.conversationId);
+            try {
+                await this.redis.del(`dm:stats:${dto.conversationId}`);
+                archiveEvent = await dmArchiveService.checkAndArchiveAfterCreate(dto.conversationId);
+            }
+            catch (e) {
+                // Non-bloquant : le message est bien sauvegardé, l'erreur cache/archive est ignorée
+                console.warn('[Messages] Redis/archive post-create non-bloquant:', e);
+            }
         }
         const message = {
             id: messageId,
