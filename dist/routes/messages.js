@@ -156,9 +156,8 @@ exports.messagesRouter.get('/', auth_1.authMiddleware, (0, express_validator_1.q
     }
 });
 // Créer un message Signal E2EE (appel interne gateway → messages)
-exports.messagesRouter.post('/', internal_1.internalOnly, (0, express_validator_1.body)('conversationId').isString().notEmpty(), (0, express_validator_1.body)('senderId').isUUID(), (0, express_validator_1.body)('content').notEmpty().isLength({ max: 65535 }), // ciphertext Signal
-(0, express_validator_1.body)('senderContent').optional().isString(), // ciphertext pour l'expéditeur
-(0, express_validator_1.body)('e2eeType').optional().isIn([1, 3]), // type Signal
+exports.messagesRouter.post('/', internal_1.internalOnly, (0, express_validator_1.body)('id').optional().isUUID(), (0, express_validator_1.body)('conversationId').isString().notEmpty(), (0, express_validator_1.body)('senderId').isUUID(), (0, express_validator_1.body)('content').notEmpty().isLength({ max: 131072 }), // ciphertext Signal (ECDH peut être grand)
+(0, express_validator_1.body)('senderContent').optional().isString().isLength({ max: 131072 }), (0, express_validator_1.body)('e2eeType').optional().isIn([1, 3]), // type Signal
 (0, express_validator_1.body)('replyToId').optional().isUUID(), validate_1.validateRequest, messages_controller_1.messageController.create.bind(messages_controller_1.messageController));
 // Rechercher des messages dans une conversation (uniquement non-E2EE)
 exports.messagesRouter.get('/search', auth_1.authMiddleware, (0, express_validator_1.query)('conversationId').isString().notEmpty(), (0, express_validator_1.query)('q').isString().isLength({ min: 1, max: 200 }), (0, express_validator_1.query)('limit').optional().isInt({ min: 1, max: 50 }), (0, express_validator_1.query)('before').optional().isISO8601(), validate_1.validateRequest, async (req, res, next) => {

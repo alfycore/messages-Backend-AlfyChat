@@ -180,10 +180,11 @@ messagesRouter.get('/',
 // Créer un message Signal E2EE (appel interne gateway → messages)
 messagesRouter.post('/',
   internalOnly,
+  body('id').optional().isUUID(),
   body('conversationId').isString().notEmpty(),
   body('senderId').isUUID(),
-  body('content').notEmpty().isLength({ max: 65535 }),       // ciphertext Signal
-  body('senderContent').optional().isString(),               // ciphertext pour l'expéditeur
+  body('content').notEmpty().isLength({ max: 131072 }),      // ciphertext Signal (ECDH peut être grand)
+  body('senderContent').optional().isString().isLength({ max: 131072 }),
   body('e2eeType').optional().isIn([1, 3]),                  // type Signal
   body('replyToId').optional().isUUID(),
   validateRequest,

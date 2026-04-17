@@ -228,6 +228,9 @@ export async function runMigrations(db: ReturnType<typeof getDatabaseClient>): P
     `ALTER TABLE messages ADD COLUMN e2ee_type TINYINT DEFAULT NULL`,
     // Migration E2EE: ajouter nonce, supprimer anciennes colonnes
     `ALTER TABLE messages ADD COLUMN nonce VARCHAR(64) DEFAULT NULL`,
+    // Migration MEDIUMTEXT: supporter les ciphertexts ECDH longs
+    `ALTER TABLE messages MODIFY COLUMN content MEDIUMTEXT NOT NULL`,
+    `ALTER TABLE messages MODIFY COLUMN sender_content MEDIUMTEXT DEFAULT NULL`,
   ];
 
   for (const sql of alterMigrations) {
