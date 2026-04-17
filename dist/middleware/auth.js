@@ -8,7 +8,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authMiddleware = authMiddleware;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-const JWT_SECRET = process.env.JWT_SECRET || 'alfychat-super-secret-key-dev-2026';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET)
+    throw new Error('JWT_SECRET environment variable is required');
 async function authMiddleware(req, res, next) {
     try {
         const authHeader = req.headers.authorization;

@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 export declare class MessageController {
+    search(req: Request, res: Response): Promise<void>;
     create(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
     getByConversation(req: Request, res: Response): Promise<void>;
     getById(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;

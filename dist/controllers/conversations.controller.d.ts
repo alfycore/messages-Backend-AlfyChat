@@ -4,8 +4,8 @@ export declare class ConversationController {
     create(req: Request, res: Response): Promise<void>;
     /** GET /:conversationId — Récupérer une conversation par ID */
     getById(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
-    /** GET /user/:userId — Conversations d'un utilisateur */
-    getByUser(req: Request, res: Response): Promise<void>;
+    /** GET /user/:userId — Conversations de l'utilisateur authentifié */
+    getByUser(req: Request, res: Response): Promise<Response<any, Record<string, any>> | undefined>;
     /** POST /dm — Trouver ou créer un DM */
     findOrCreateDM(req: Request, res: Response): Promise<void>;
     /** PATCH /:conversationId — Mettre à jour (nom, avatar) */

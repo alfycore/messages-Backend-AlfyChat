@@ -32,8 +32,12 @@ export function getRedisClient(config?: RedisConfig) {
       }
     },
 
-    async del(key: string): Promise<void> {
-      await client!.del(key);
+    async del(...keys: string[]): Promise<void> {
+      if (keys.length) await client!.del(...keys);
+    },
+
+    async keys(pattern: string): Promise<string[]> {
+      return client!.keys(pattern);
     },
   };
 }

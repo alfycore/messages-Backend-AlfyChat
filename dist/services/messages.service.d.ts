@@ -2,6 +2,7 @@ import { Message, CreateMessageDTO, UpdateMessageDTO } from '../types/message';
 export declare class MessageService {
     private get db();
     private get redis();
+    search(conversationId: string, searchQuery: string, _userId: string, limit?: number, before?: string): Promise<Message[]>;
     create(dto: CreateMessageDTO): Promise<Message>;
     getByConversation(conversationId: string, _userId: string, limit?: number, before?: string): Promise<Message[]>;
     getById(messageId: string, _userId: string): Promise<Message | null>;

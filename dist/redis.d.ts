@@ -6,7 +6,8 @@ interface RedisConfig {
 export declare function getRedisClient(config?: RedisConfig): {
     get(key: string): Promise<string | null>;
     set(key: string, value: string, ttl?: number): Promise<void>;
-    del(key: string): Promise<void>;
+    del(...keys: string[]): Promise<void>;
+    keys(pattern: string): Promise<string[]>;
 };
 export {};
 //# sourceMappingURL=redis.d.ts.map

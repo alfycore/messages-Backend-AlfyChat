@@ -15,10 +15,14 @@ function getDatabaseClient(config) {
             user: config.user,
             password: config.password,
             database: config.database,
-            connectionLimit: 10,
+            connectionLimit: 30,
             charset: 'utf8mb4',
             waitForConnections: true,
             queueLimit: 0,
+            enableKeepAlive: true,
+            keepAliveInitialDelay: 0,
+            connectTimeout: 10000,
+            idleTimeout: 60000,
         });
     }
     if (!pool)
@@ -136,6 +140,19 @@ async function runMigrations(db) {
       INDEX idx_archived_at (archived_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
         // Index pour la purge par date (création conditionnelle gérée après)
+        // Table notifications — pings persistants en DB jusqu'à lecture
+        `CREATE TABLE IF NOT EXISTS notifications (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      conversation_id VARCHAR(100) NOT NULL,
+      sender_name VARCHAR(100) NOT NULL,
+      message_count INT UNSIGNED DEFAULT 1,
+      is_read BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_user_conv (user_id, conversation_id),
+      INDEX idx_user_unread (user_id, is_read)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
     ];
     for (const sql of migrations) {
         await db.execute(sql);
@@ -149,6 +166,26 @@ async function runMigrations(db) {
     }
     catch (e) {
         console.log('Index migration warning:', e?.message ?? e);
+    }
+    // Index composite pour la requête principale (conversation_id, is_deleted, created_at)
+    try {
+        const [idxRows2] = await db.execute(`SELECT COUNT(*) as cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'messages' AND index_name = 'idx_messages_conv_deleted_created'`);
+        if (!idxRows2 || idxRows2[0]?.cnt === 0) {
+            await db.execute(`CREATE INDEX idx_messages_conv_deleted_created ON messages (conversation_id, is_deleted, created_at DESC)`);
+        }
+    }
+    catch (e) {
+        console.log('Index composite migration warning:', e?.message ?? e);
+    }
+    // Index sur message_reactions.message_id pour le batch fetch
+    try {
+        const [idxRows3] = await db.execute(`SELECT COUNT(*) as cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'message_reactions' AND index_name = 'idx_reactions_message'`);
+        if (!idxRows3 || idxRows3[0]?.cnt === 0) {
+            await db.execute(`CREATE INDEX idx_reactions_message ON message_reactions (message_id)`);
+        }
+    }
+    catch (e) {
+        console.log('Index reactions migration warning:', e?.message ?? e);
     }
     // ALTER TABLE migrations pour colonnes manquantes sur tables existantes
     const alterMigrations = [
@@ -217,5 +254,34 @@ async function runMigrations(db) {
     catch (e) {
         console.log('DROP encryption_keys warning:', e.message);
     }
+    // ==========================================
+    // NOUVELLES FEATURES — MESSAGES VOCAUX & DMs ÉPINGLÉS
+    // ==========================================
+    // message_type: type de message (text, voice, image, file, system)
+    // voice_url: URL du clip audio pour les messages vocaux
+    // voice_duration: durée en secondes du message vocal
+    const msgNewCols = [
+        `ALTER TABLE messages ADD COLUMN message_type ENUM('text','voice','image','file','system') NOT NULL DEFAULT 'text'`,
+        `ALTER TABLE messages ADD COLUMN voice_url VARCHAR(500) NULL`,
+        `ALTER TABLE messages ADD COLUMN voice_duration INT NULL COMMENT 'Durée en secondes (messages vocaux)'`,
+    ];
+    for (const sql of msgNewCols) {
+        try {
+            await db.execute(sql);
+        }
+        catch (e) {
+            if (e?.errno !== 1060 && e?.errno !== 1061)
+                console.log('Messages new cols migration warning:', e?.message);
+        }
+    }
+    // pinned_conversations: DMs épinglés en haut de la liste (dupliqué ici pour accès local)
+    await db.execute(`CREATE TABLE IF NOT EXISTS pinned_conversations (
+      user_id VARCHAR(36) NOT NULL,
+      conversation_id VARCHAR(100) NOT NULL,
+      pin_order INT DEFAULT 0,
+      pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, conversation_id),
+      INDEX idx_user_pinned (user_id, pin_order)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`);
 }
 //# sourceMappingURL=database.js.map

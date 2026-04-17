@@ -28,8 +28,12 @@ function getRedisClient(config) {
                 await client.set(key, value);
             }
         },
-        async del(key) {
-            await client.del(key);
+        async del(...keys) {
+            if (keys.length)
+                await client.del(...keys);
+        },
+        async keys(pattern) {
+            return client.keys(pattern);
         },
     };
 }

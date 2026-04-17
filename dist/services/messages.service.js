@@ -18,9 +18,39 @@ class MessageService {
     get redis() {
         return (0, redis_1.getRedisClient)();
     }
+    // Rechercher des messages dans une conversation (LIKE sur content, uniquement non-E2EE)
+    async search(conversationId, searchQuery, _userId, limit = 30, before) {
+        const safeLimit = Math.min(Math.max(Math.floor(limit) || 30, 1), 50);
+        const likePattern = `%${searchQuery.replace(/[%_\\]/g, '\\$&')}%`;
+        let query = `
+      SELECT m.id, m.conversation_id, m.sender_id,
+             m.content, m.sender_content, m.e2ee_type,
+             m.nonce, m.reply_to_id, m.is_edited, m.is_deleted,
+             m.created_at, m.updated_at,
+             u.username as sender_username, u.display_name as sender_display_name, u.avatar_url as sender_avatar
+      FROM messages m
+      JOIN users u ON m.sender_id = u.id
+      WHERE m.conversation_id = ? AND m.is_deleted = FALSE
+        AND m.e2ee_type IS NULL
+        AND m.content LIKE ?
+    `;
+        const params = [conversationId, likePattern];
+        if (before) {
+            query += ' AND m.created_at < ?';
+            params.push(before);
+        }
+        query += ` ORDER BY m.created_at DESC LIMIT ${safeLimit}`;
+        const [rows] = await this.db.query(query, params);
+        const messages = rows;
+        return Promise.all(messages.map(async (msg) => {
+            const reactions = await this.getReactions(msg.id);
+            return this.formatMessage(msg, reactions);
+        }));
+    }
     // Créer un message — accepte des ciphertexts Signal E2EE opaques
+    // Si dto.id est fourni (pré-généré par le gateway pour livraison optimiste), l'utilise directement.
     async create(dto) {
-        const messageId = (0, uuid_1.v4)();
+        const messageId = dto.id || (0, uuid_1.v4)();
         // Récupérer les participants de la conversation
         let [participants] = await this.db.query('SELECT user_id FROM conversation_participants WHERE conversation_id = ?', [dto.conversationId]);
         // Si la conversation n'existe pas (DM), la créer automatiquement
@@ -35,7 +65,6 @@ class MessageService {
              VALUES (?, ?, NOW())
              ON DUPLICATE KEY UPDATE joined_at = joined_at`, [dto.conversationId, userId]);
                 }
-                await new Promise(resolve => setTimeout(resolve, 50));
             }
             catch (error) {
                 console.error('❌ Erreur création conversation DM:', error);

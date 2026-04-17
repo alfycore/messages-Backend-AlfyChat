@@ -6,8 +6,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.messageController = exports.MessageController = void 0;
 const messages_service_1 = require("../services/messages.service");
 const logger_1 = require("../utils/logger");
+const redis_1 = require("../redis");
 const messageService = new messages_service_1.MessageService();
 class MessageController {
+    // Rechercher des messages
+    async search(req, res) {
+        try {
+            const { conversationId, q, limit = '30', before } = req.query;
+            const userId = req.userId || req.headers['x-user-id'];
+            const messages = await messageService.search(conversationId, q, userId, parseInt(limit), before);
+            res.json(messages);
+        }
+        catch (error) {
+            logger_1.logger.error('Erreur recherche messages:', error);
+            res.status(500).json({ error: 'Erreur serveur' });
+        }
+    }
     // Créer un message
     async create(req, res) {
         try {
@@ -22,6 +36,12 @@ class MessageController {
             });
             logger_1.logger.info(`Message créé: ${message.id} (E2EE)`);
             res.status(201).json(message);
+            // Invalider le cache Redis pour cette conversation (fire-and-forget)
+            try {
+                const redis = (0, redis_1.getRedisClient)();
+                await redis.del(`msg:${conversationId}:50:`);
+            }
+            catch { /* non-bloquant */ }
         }
         catch (error) {
             logger_1.logger.error('Erreur création message:', error);

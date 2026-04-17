@@ -57,10 +57,15 @@ class ConversationController {
             res.status(500).json({ error: 'Erreur serveur' });
         }
     }
-    /** GET /user/:userId — Conversations d'un utilisateur */
+    /** GET /user/:userId — Conversations de l'utilisateur authentifié */
     async getByUser(req, res) {
         try {
-            const userId = req.headers['x-user-id'] || req.params.userId;
+            const authenticatedId = req.userId;
+            // Seul l'utilisateur authentifié peut accéder à ses propres conversations
+            if (req.params.userId !== authenticatedId) {
+                return res.status(403).json({ error: 'Accès non autorisé' });
+            }
+            const userId = authenticatedId;
             const conversations = await conversationService.getByUser(userId);
             // Ajouter le nombre de messages non lus
             const conversationsWithUnread = await Promise.all(conversations.map(async (conv) => ({
