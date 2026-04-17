@@ -80,29 +80,23 @@ export class ConversationService {
   }
 
   async getByUser(userId: string): Promise<Conversation[]> {
+    // Requête 1 : conversations de l'utilisateur (simple, rapide, indexée)
     const result = await this.db.query(
       `SELECT c.id, c.type, c.name, c.avatar_url, c.owner_id,
-              c.created_at, c.updated_at,
-              lm.content  AS last_message,
-              lm.created_at AS last_message_at
+              c.created_at, c.updated_at
        FROM conversations c
        JOIN conversation_participants cp ON c.id = cp.conversation_id
-       LEFT JOIN messages lm ON lm.id = (
-         SELECT id FROM messages
-         WHERE conversation_id = c.id
-         ORDER BY created_at DESC
-         LIMIT 1
-       )
        WHERE cp.user_id = ?
-       ORDER BY COALESCE(lm.created_at, c.updated_at) DESC`,
+       ORDER BY c.updated_at DESC`,
       [userId]
     );
     const rows = extractRows(result);
     if (rows.length === 0) return [];
 
-    // Charger TOUS les participants en une seule requête (évite le N+1)
     const convIds = rows.map((r: any) => r.id);
     const placeholders = convIds.map(() => '?').join(',');
+
+    // Requête 2 : tous les participants en une seule requête (évite le N+1)
     const participantsResult = await this.db.query(
       `SELECT cp.conversation_id, cp.user_id, cp.role, cp.joined_at, cp.last_read_at,
               u.username, u.display_name, u.avatar_url, u.is_online
@@ -112,6 +106,22 @@ export class ConversationService {
       convIds
     );
     const allParticipants = extractRows(participantsResult);
+
+    // Requête 3 : dernier message par conversation (batch, utilise idx_messages_conv_created)
+    const lastMsgResult = await this.db.query(
+      `SELECT m.conversation_id, m.content, m.created_at
+       FROM messages m
+       INNER JOIN (
+         SELECT conversation_id, MAX(created_at) AS max_ts
+         FROM messages
+         WHERE conversation_id IN (${placeholders})
+         GROUP BY conversation_id
+       ) latest ON m.conversation_id = latest.conversation_id
+              AND m.created_at = latest.max_ts
+       GROUP BY m.conversation_id`,
+      convIds
+    );
+    const lastMessages = extractRows(lastMsgResult);
 
     // Grouper les participants par conversation_id
     const participantsByConv = new Map<string, ConversationParticipant[]>();
@@ -130,8 +140,15 @@ export class ConversationService {
       participantsByConv.set(p.conversation_id, list);
     }
 
+    // Grouper les derniers messages par conversation_id
+    const lastMessageByConv = new Map<string, { content: string; createdAt: string }>();
+    for (const lm of lastMessages) {
+      lastMessageByConv.set(lm.conversation_id, { content: lm.content, createdAt: lm.created_at });
+    }
+
     return rows.map((conv: any) => {
       const participants = participantsByConv.get(conv.id) ?? [];
+      const lm = lastMessageByConv.get(conv.id);
       return {
         id: conv.id,
         type: conv.type === 'direct' ? 'dm' : conv.type,
@@ -142,8 +159,8 @@ export class ConversationService {
         participantIds: participants.map((p: ConversationParticipant) => p.userId),
         createdAt: conv.created_at,
         updatedAt: conv.updated_at,
-        lastMessage: conv.last_message ?? null,
-        lastMessageAt: conv.last_message_at ?? conv.updated_at,
+        lastMessage: lm?.content ?? null,
+        lastMessageAt: lm?.createdAt ?? conv.updated_at,
       } as Conversation;
     });
   }
