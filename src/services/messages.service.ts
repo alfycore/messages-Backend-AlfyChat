@@ -68,9 +68,15 @@ export class MessageService {
       [dto.conversationId]
     );
 
-    // Si la conversation n'existe pas (DM), la créer automatiquement
+    // Si la conversation n'existe pas (DM), la créer automatiquement — mais uniquement
+    // si senderId figure bien parmi les deux UUID encodés dans le conversationId.
     if ((participants as any[]).length === 0 && dto.conversationId.startsWith('dm_')) {
-      const userIds = dto.conversationId.replace('dm_', '').split('_');
+      const rawIds = dto.conversationId.replace('dm_', '').split('_');
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const userIds = rawIds.filter(id => uuidRe.test(id));
+      if (userIds.length !== 2 || !userIds.includes(dto.senderId)) {
+        throw new Error('Forbidden: not a participant of this DM');
+      }
 
       try {
         await this.db.execute(
@@ -101,6 +107,12 @@ export class MessageService {
 
     if ((participants as any[]).length === 0) {
       throw new Error('Conversation non trouvée');
+    }
+
+    // Vérifier que l'expéditeur est bien participant de cette conversation.
+    const isParticipant = (participants as any[]).some(p => p.user_id === dto.senderId);
+    if (!isParticipant) {
+      throw new Error('Forbidden: sender is not a participant of this conversation');
     }
 
     // Stocker le ciphertext Signal opaque (le serveur ne déchiffre JAMAIS)
@@ -240,8 +252,25 @@ export class MessageService {
     return ((result as any)[0]).affectedRows > 0;
   }
 
-  // Ajouter une réaction
+  // Vérifie que l'utilisateur participe bien à la conversation qui contient ce message.
+  private async assertMessageAccess(messageId: string, userId: string): Promise<void> {
+    const [rows] = await this.db.query(
+      `SELECT 1
+       FROM messages m
+       JOIN conversation_participants cp
+         ON cp.conversation_id = m.conversation_id AND cp.user_id = ?
+       WHERE m.id = ?
+       LIMIT 1`,
+      [userId, messageId]
+    );
+    if ((rows as any[]).length === 0) {
+      throw new Error('Forbidden: not a participant of this conversation');
+    }
+  }
+
+  // Ajouter une réaction — exige l'appartenance à la conversation
   async addReaction(messageId: string, userId: string, emoji: string): Promise<void> {
+    await this.assertMessageAccess(messageId, userId);
     await this.db.execute(
       `INSERT IGNORE INTO message_reactions (id, message_id, user_id, emoji)
        VALUES (?, ?, ?, ?)`,
@@ -249,8 +278,9 @@ export class MessageService {
     );
   }
 
-  // Supprimer une réaction
+  // Supprimer une réaction — exige l'appartenance à la conversation
   async removeReaction(messageId: string, userId: string, emoji: string): Promise<void> {
+    await this.assertMessageAccess(messageId, userId);
     await this.db.execute(
       'DELETE FROM message_reactions WHERE message_id = ? AND user_id = ? AND emoji = ?',
       [messageId, userId, emoji]

@@ -261,6 +261,7 @@ messagesRouter.get('/conversation/:conversationId',
 
 // Récupérer un message par ID
 messagesRouter.get('/:messageId',
+  authMiddleware,
   param('messageId').isUUID(),
   validateRequest,
   messageController.getById.bind(messageController)
@@ -268,6 +269,7 @@ messagesRouter.get('/:messageId',
 
 // Mettre à jour un message (édition — nouveaux ciphertexts Signal)
 messagesRouter.patch('/:messageId',
+  authMiddleware,
   param('messageId').isUUID(),
   body('content').notEmpty().isLength({ max: 65535 }),
   body('senderContent').optional().isString(),
@@ -278,6 +280,7 @@ messagesRouter.patch('/:messageId',
 
 // Supprimer un message
 messagesRouter.delete('/:messageId',
+  authMiddleware,
   param('messageId').isUUID(),
   validateRequest,
   messageController.delete.bind(messageController)
@@ -285,6 +288,7 @@ messagesRouter.delete('/:messageId',
 
 // Ajouter une réaction
 messagesRouter.post('/:messageId/reactions',
+  authMiddleware,
   param('messageId').isUUID(),
   body('emoji').isString().isLength({ min: 1, max: 50 }),
   validateRequest,
@@ -293,6 +297,7 @@ messagesRouter.post('/:messageId/reactions',
 
 // Supprimer une réaction
 messagesRouter.delete('/:messageId/reactions/:emoji',
+  authMiddleware,
   param('messageId').isUUID(),
   validateRequest,
   messageController.removeReaction.bind(messageController)
@@ -300,6 +305,7 @@ messagesRouter.delete('/:messageId/reactions/:emoji',
 
 // Marquer comme lu
 messagesRouter.post('/conversation/:conversationId/read',
+  authMiddleware,
   param('conversationId').isUUID(),
   validateRequest,
   messageController.markAsRead.bind(messageController)

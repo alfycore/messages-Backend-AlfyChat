@@ -7,6 +7,7 @@ import { Router } from 'express';
 import { param, query, body } from 'express-validator';
 import { validateRequest } from '../middleware/validate';
 import { authMiddleware } from '../middleware/auth';
+import { internalOnly } from '../middleware/internal';
 import { DMArchiveService } from '../services/dm-archive.service';
 import { logger } from '../utils/logger';
 
@@ -121,6 +122,7 @@ archiveRouter.get('/message/:messageId',
 
 // Mettre en cache un message récupéré d'un peer (appelé par le gateway)
 archiveRouter.post('/cache',
+  internalOnly,
   body('messages').isArray({ min: 1 }),
   validateRequest,
   async (req, res) => {
