@@ -3,10 +3,13 @@
 // Chiffrement multi-niveaux pour messages privés
 // ==========================================
 
+import dotenv from 'dotenv';
+dotenv.config();
+import { registerGlobalErrorHandlers } from './utils/error-reporter';
+registerGlobalErrorHandlers();
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import dotenv from 'dotenv';
 import { messagesRouter } from './routes/messages';
 import { conversationsRouter } from './routes/conversations';
 import { archiveRouter } from './routes/archive';
