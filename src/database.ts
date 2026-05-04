@@ -312,4 +312,18 @@ export async function runMigrations(db: ReturnType<typeof getDatabaseClient>): P
       INDEX idx_user_pinned (user_id, pin_order)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
   );
+
+  // Config DB externe par utilisateur (pour l'export des messages archivés)
+  await db.execute(
+    `CREATE TABLE IF NOT EXISTS user_archive_db_config (
+      user_id VARCHAR(36) PRIMARY KEY,
+      host VARCHAR(255) NOT NULL,
+      port SMALLINT UNSIGNED NOT NULL DEFAULT 3306,
+      db_user VARCHAR(128) NOT NULL,
+      db_password_enc TEXT NOT NULL,
+      db_name VARCHAR(128) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  );
 }

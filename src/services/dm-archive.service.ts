@@ -7,6 +7,9 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDatabaseClient } from '../database';
 import { getRedisClient } from '../redis';
 import { logger } from '../utils/logger';
+import { ExternalDbService } from './external-db.service';
+
+const externalDbService = new ExternalDbService();
 import {
   DM_QUOTA_MAX_MESSAGES,
   DM_QUOTA_MAX_DAYS,
@@ -68,12 +71,12 @@ export class DMArchiveService {
 
     const stats: DMConversationStats = {
       conversationId,
-      messageCount: row?.message_count || 0,
+      messageCount: Number(row?.message_count || 0),
       oldestMessageAt: row?.oldest_message_at || new Date(),
       newestMessageAt: row?.newest_message_at || new Date(),
       lastActivityAt: row?.last_activity_at || new Date(),
-      archivedCount: (archRows as any[])[0]?.archived_count || 0,
-      recentActivityCount: row?.recent_activity_count || 0,
+      archivedCount: Number((archRows as any[])[0]?.archived_count || 0),
+      recentActivityCount: Number(row?.recent_activity_count || 0),
     };
 
     // Mettre à jour la table de stats
@@ -132,7 +135,7 @@ export class DMArchiveService {
       [conversationId, thirtyDaysAgo]
     );
 
-    const oldCount = (oldRows as any[])[0]?.count || 0;
+    const oldCount = Number((oldRows as any[])[0]?.count || 0);
     if (oldCount > 0) {
       return {
         exceeded: true,
@@ -228,6 +231,11 @@ export class DMArchiveService {
     );
 
     logger.info(`📦 Archivage DM: ${messages.length} MP de ${conversationId} (${reason})`);
+
+    // Export vers les DB externes des participants (fire-and-forget)
+    externalDbService.exportToParticipants(conversationId, archiveEntries).catch((e) =>
+      logger.warn(`Erreur export DB externe pour ${conversationId}: ${e?.message}`)
+    );
 
     return {
       conversationId,
@@ -369,7 +377,7 @@ export class DMArchiveService {
     for (const conv of conversations as any[]) {
       // Vérifier si l'utilisateur est inactif (< seuil dans les 20 derniers jours)
       if (conv.recent_messages < DM_PURGE_INACTIVE_THRESHOLD) {
-        const messagesToArchive = conv.total_messages - DM_PURGE_INACTIVE_KEEP;
+        const messagesToArchive = Number(conv.total_messages) - DM_PURGE_INACTIVE_KEEP;
         
         if (messagesToArchive > 0) {
           const event = await this.archiveOldMessages(

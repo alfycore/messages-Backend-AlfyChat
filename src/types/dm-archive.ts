@@ -4,7 +4,7 @@
 
 // Constantes quota DM
 export const DM_QUOTA_MAX_MESSAGES = 20000;
-export const DM_QUOTA_MAX_DAYS = 30;
+export const DM_QUOTA_MAX_DAYS = 150;
 export const DM_PURGE_INACTIVE_THRESHOLD = 90; // jours
 export const DM_PURGE_INACTIVE_KEEP = 500;
 export const DM_P2P_CACHE_TTL = 3600; // secondes
