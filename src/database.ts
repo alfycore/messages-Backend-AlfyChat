@@ -313,6 +313,35 @@ export async function runMigrations(db: ReturnType<typeof getDatabaseClient>): P
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
   );
 
+  // ==========================================
+  // NOTIFICATIONS — Système de pings avancé
+  // ==========================================
+
+  // Paramètres de notification par canal/DM/groupe (mute, mentions seulement, etc.)
+  await db.execute(
+    `CREATE TABLE IF NOT EXISTS channel_notification_settings (
+      user_id     VARCHAR(36)  NOT NULL,
+      target_id   VARCHAR(36)  NOT NULL,
+      target_type ENUM('channel','dm','group','server') NOT NULL,
+      level       ENUM('all','mentions','nothing') NOT NULL DEFAULT 'all',
+      updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, target_id),
+      INDEX idx_user_notif (user_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  );
+
+  // Migrations incrémentales sur la table notifications
+  const notifAlterations = [
+    `ALTER TABLE notifications ADD COLUMN notification_type ENUM('message','mention') NOT NULL DEFAULT 'message'`,
+    `ALTER TABLE notifications ADD COLUMN sender_id VARCHAR(36) NULL`,
+    `ALTER TABLE notifications ADD COLUMN channel_name VARCHAR(100) NULL`,
+  ];
+  for (const sql of notifAlterations) {
+    try { await db.execute(sql); } catch (e: any) {
+      if (e?.errno !== 1060 && e?.errno !== 1061) console.log('Notifications alteration warning:', e?.message);
+    }
+  }
+
   // Config DB externe par utilisateur (pour l'export des messages archivés)
   await db.execute(
     `CREATE TABLE IF NOT EXISTS user_archive_db_config (

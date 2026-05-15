@@ -37,6 +37,8 @@ app.use('/messages', messagesRouter);
 app.use('/conversations', conversationsRouter);
 app.use('/archive', archiveRouter);
 app.use('/notifications', notificationsRouter);
+// Alias pour les appels proxiés via le gateway (/api/messages/notifications/* → /messages/notifications/*)
+app.use('/messages/notifications', notificationsRouter);
 
 // Health check
 app.get('/health', (req, res) => {

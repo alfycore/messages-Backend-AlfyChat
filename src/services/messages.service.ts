@@ -249,7 +249,7 @@ export class MessageService {
       [messageId, senderId]
     );
 
-    return ((result as any)[0]).affectedRows > 0;
+    return (result as any).affectedRows > 0;
   }
 
   // Vérifie que l'utilisateur participe bien à la conversation qui contient ce message.
