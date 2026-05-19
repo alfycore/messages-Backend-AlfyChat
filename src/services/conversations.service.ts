@@ -227,7 +227,7 @@ export class ConversationService {
     return rows[0].role;
   }
 
-  private async getParticipants(conversationId: string): Promise<ConversationParticipant[]> {
+  async getParticipants(conversationId: string): Promise<ConversationParticipant[]> {
     const result = await this.db.query(
       `SELECT cp.user_id, cp.role, cp.joined_at, cp.last_read_at,
               u.username, u.display_name, u.avatar_url, u.is_online

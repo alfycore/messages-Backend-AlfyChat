@@ -134,6 +134,21 @@ conversationsRouter.patch('/:conversationId',
   conversationController.update.bind(conversationController)
 );
 
+// ============ GET /:conversationId/participants — Liste des participants (interne, pas d'auth) ============
+conversationsRouter.get('/:conversationId/participants',
+  param('conversationId').isString(),
+  validateRequest,
+  async (req, res) => {
+    try {
+      const { conversationId } = req.params;
+      const participants = await conversationService.getParticipants(conversationId);
+      res.json({ participants: participants.map((p) => ({ userId: p.userId })) });
+    } catch {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
+);
+
 // ============ GET /:conversationId/participants/:userId/check — Vérifier appartenance (interne) ============
 conversationsRouter.get('/:conversationId/participants/:userId/check',
   param('conversationId').isString(),
