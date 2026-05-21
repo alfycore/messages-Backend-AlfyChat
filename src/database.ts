@@ -301,6 +301,13 @@ export async function runMigrations(db: ReturnType<typeof getDatabaseClient>): P
     }
   }
 
+  // is_open: Open (true) = any member can add others; Closed (false) = only owner can add
+  try {
+    await db.execute(`ALTER TABLE conversations ADD COLUMN is_open TINYINT(1) NOT NULL DEFAULT 1`);
+  } catch (e: any) {
+    if (e?.errno !== 1060) console.log('conversations.is_open migration warning:', e?.message);
+  }
+
   // pinned_conversations: DMs épinglés en haut de la liste (dupliqué ici pour accès local)
   await db.execute(
     `CREATE TABLE IF NOT EXISTS pinned_conversations (

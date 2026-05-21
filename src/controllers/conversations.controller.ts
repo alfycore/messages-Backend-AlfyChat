@@ -16,7 +16,7 @@ export class ConversationController {
   /** POST / — Créer une conversation (DM ou groupe) */
   async create(req: Request, res: Response) {
     try {
-      const { type, participantIds, name, avatarUrl } = req.body;
+      const { type, participantIds, name, avatarUrl, isOpen } = req.body;
       const userId = req.headers['x-user-id'] as string;
       const ownerId = type === 'group' ? userId : undefined;
 
@@ -26,6 +26,7 @@ export class ConversationController {
         name,
         avatarUrl,
         ownerId,
+        isOpen,
       });
 
       logger.info(`Conversation créée: ${conversation.id} (type: ${type})`);
@@ -115,7 +116,7 @@ export class ConversationController {
   async update(req: Request, res: Response) {
     try {
       const { conversationId } = req.params;
-      const { name, avatarUrl } = req.body;
+      const { name, avatarUrl, isOpen } = req.body;
       const userId = req.headers['x-user-id'] as string;
 
       // Vérifier que l'utilisateur est participant
@@ -124,7 +125,7 @@ export class ConversationController {
         return res.status(403).json({ error: 'Accès non autorisé' });
       }
 
-      await conversationService.update(conversationId, { name, avatarUrl });
+      await conversationService.update(conversationId, { name, avatarUrl, isOpen });
       const updated = await conversationService.getById(conversationId);
       res.json(updated);
     } catch (error) {
@@ -146,6 +147,14 @@ export class ConversationController {
       const isParticipant = await conversationService.isParticipant(conversationId, requesterId);
       if (!isParticipant) {
         return res.status(403).json({ error: 'Accès non autorisé' });
+      }
+
+      // En mode Fermé, seul le propriétaire peut ajouter des membres
+      const conversation = await conversationService.getById(conversationId);
+      if (conversation?.type === 'group' && conversation.isOpen === false) {
+        if (conversation.ownerId !== requesterId) {
+          return res.status(403).json({ error: 'Ce groupe est fermé. Seul le propriétaire peut ajouter des membres.' });
+        }
       }
 
       await conversationService.addParticipant(conversationId, userId);

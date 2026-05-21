@@ -52,6 +52,7 @@ export interface Conversation {
   name?: string;
   avatarUrl?: string;
   ownerId?: string;
+  isOpen?: boolean;
   participants: ConversationParticipant[];
   participantIds: string[];
   lastMessage?: Message;
@@ -100,5 +101,6 @@ export interface CreateConversationDTO {
   name?: string;
   avatarUrl?: string;
   ownerId?: string;
+  isOpen?: boolean;
 }
 

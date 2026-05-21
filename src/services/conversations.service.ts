@@ -35,9 +35,10 @@ export class ConversationService {
     const conversationId = uuidv4();
     const ownerId = dto.ownerId || dto.participantIds[0];
 
+    const isOpen = dto.type === 'group' ? (dto.isOpen !== false ? 1 : 0) : 1;
     await this.db.execute(
-      `INSERT INTO conversations (id, type, name, avatar_url, owner_id) VALUES (?, ?, ?, ?, ?)`,
-      [conversationId, dto.type, dto.name || null, dto.avatarUrl || null, dto.type === 'group' ? ownerId : null]
+      `INSERT INTO conversations (id, type, name, avatar_url, owner_id, is_open) VALUES (?, ?, ?, ?, ?, ?)`,
+      [conversationId, dto.type, dto.name || null, dto.avatarUrl || null, dto.type === 'group' ? ownerId : null, isOpen]
     );
 
     for (const userId of dto.participantIds) {
@@ -72,6 +73,7 @@ export class ConversationService {
       name: conv.name,
       avatarUrl: conv.avatar_url,
       ownerId: conv.owner_id,
+      isOpen: conv.is_open !== 0,
       participants,
       participantIds: participants.map(p => p.userId),
       createdAt: conv.created_at,
@@ -82,7 +84,7 @@ export class ConversationService {
   async getByUser(userId: string): Promise<Conversation[]> {
     // Requête 1 : conversations de l'utilisateur (simple, rapide, indexée)
     const result = await this.db.query(
-      `SELECT c.id, c.type, c.name, c.avatar_url, c.owner_id,
+      `SELECT c.id, c.type, c.name, c.avatar_url, c.owner_id, c.is_open,
               c.created_at, c.updated_at
        FROM conversations c
        JOIN conversation_participants cp ON c.id = cp.conversation_id
@@ -154,6 +156,7 @@ export class ConversationService {
         name: conv.name,
         avatarUrl: conv.avatar_url,
         ownerId: conv.owner_id,
+        isOpen: conv.is_open !== 0,
         participants,
         participantIds: participants.map((p: ConversationParticipant) => p.userId),
         createdAt: conv.created_at,
@@ -275,7 +278,7 @@ export class ConversationService {
     );
   }
 
-  async update(conversationId: string, data: { name?: string; avatarUrl?: string }): Promise<void> {
+  async update(conversationId: string, data: { name?: string; avatarUrl?: string; isOpen?: boolean }): Promise<void> {
     const fields: string[] = [];
     const values: unknown[] = [];
 
@@ -286,6 +289,10 @@ export class ConversationService {
     if (data.avatarUrl !== undefined) {
       fields.push('avatar_url = ?');
       values.push(data.avatarUrl);
+    }
+    if (data.isOpen !== undefined) {
+      fields.push('is_open = ?');
+      values.push(data.isOpen ? 1 : 0);
     }
 
     if (fields.length === 0) return;
