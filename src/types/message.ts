@@ -55,7 +55,9 @@ export interface Conversation {
   isOpen?: boolean;
   participants: ConversationParticipant[];
   participantIds: string[];
-  lastMessage?: Message;
+  // lastMessage peut être un objet Message complet (sur endpoints détaillés)
+  // ou une simple preview (string) lorsqu'on retourne uniquement le contenu.
+  lastMessage?: Message | string | null;
   unreadCount?: number;
   createdAt: Date;
   updatedAt: Date;

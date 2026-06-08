@@ -10,7 +10,7 @@ import { timingSafeEqual } from 'crypto';
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET;
 if (!INTERNAL_SECRET) throw new Error('INTERNAL_SECRET environment variable is required — refusing to start without it');
 
-function safeCompare(a: string, b: string): boolean {
+function safeCompare(a: string | undefined, b: string | undefined): boolean {
   if (!a || !b) return false;
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -20,7 +20,7 @@ function safeCompare(a: string, b: string): boolean {
 
 export function internalOnly(req: Request, res: Response, next: NextFunction): void {
   const secret = req.headers['x-internal-secret'] as string | undefined;
-  if (!safeCompare(secret || '', INTERNAL_SECRET)) {
+  if (!safeCompare(secret, INTERNAL_SECRET)) {
     res.status(403).json({ error: 'Accès interdit — réservé aux services internes' });
     return;
   }
