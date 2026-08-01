@@ -116,6 +116,27 @@ conversationsRouter.get('/user/:userId',
   conversationController.getByUser.bind(conversationController)
 );
 
+// Récupérer les conversations épinglées de l'utilisateur connecté
+// (doit être déclaré avant /:conversationId, sinon Express matche "pinned" comme un conversationId)
+conversationsRouter.get('/pinned',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const userId = (req as any).userId;
+      const db = getDatabaseClient();
+
+      const [rows] = await db.query(
+        'SELECT conversation_id, pin_order FROM pinned_conversations WHERE user_id = ? ORDER BY pin_order ASC',
+        [userId]
+      );
+
+      res.json((rows as any[]).map(r => ({ conversationId: r.conversation_id, pinOrder: r.pin_order })));
+    } catch {
+      res.status(500).json({ error: 'Erreur serveur' });
+    }
+  }
+);
+
 // ============ GET /:conversationId — Récupérer une conversation ============
 conversationsRouter.get('/:conversationId',
   authMiddleware,
@@ -250,26 +271,6 @@ conversationsRouter.delete('/:conversationId/pin',
       );
 
       res.json({ success: true });
-    } catch {
-      res.status(500).json({ error: 'Erreur serveur' });
-    }
-  }
-);
-
-// Récupérer les conversations épinglées de l'utilisateur connecté
-conversationsRouter.get('/pinned',
-  authMiddleware,
-  async (req, res) => {
-    try {
-      const userId = (req as any).userId;
-      const db = getDatabaseClient();
-
-      const [rows] = await db.query(
-        'SELECT conversation_id, pin_order FROM pinned_conversations WHERE user_id = ? ORDER BY pin_order ASC',
-        [userId]
-      );
-
-      res.json((rows as any[]).map(r => ({ conversationId: r.conversation_id, pinOrder: r.pin_order })));
     } catch {
       res.status(500).json({ error: 'Erreur serveur' });
     }
