@@ -51,10 +51,9 @@ export class MessageService {
     const [rows] = await this.db.query(query, params);
     const messages = rows as any[];
 
-    return Promise.all(messages.map(async (msg) => {
-      const reactions = await this.getReactions(msg.id);
-      return this.formatMessage(msg, reactions);
-    }));
+    // Une seule requête pour toutes les réactions (au lieu d'une par message).
+    const reactionsByMessage = await this.getReactionsBulk(messages.map((m) => m.id));
+    return messages.map((msg) => this.formatMessage(msg, reactionsByMessage.get(msg.id) ?? []));
   }
 
   // Créer un message — accepte des ciphertexts Signal E2EE opaques
@@ -196,14 +195,22 @@ export class MessageService {
     const [rows] = await this.db.query(query, params);
     const messages = rows as any[];
 
-    return Promise.all(messages.map(async (msg) => {
-      const reactions = await this.getReactions(msg.id);
-      return this.formatMessage(msg, reactions);
-    }));
+    // Une seule requête pour toutes les réactions (au lieu d'une par message).
+    const reactionsByMessage = await this.getReactionsBulk(messages.map((m) => m.id));
+    return messages.map((msg) => this.formatMessage(msg, reactionsByMessage.get(msg.id) ?? []));
   }
 
-  // Récupérer un message par ID
-  async getById(messageId: string, _userId: string): Promise<Message | null> {
+  // Récupérer un message par ID — réservé aux participants de sa conversation.
+  // Sans ce contrôle, n'importe quel compte authentifié pouvait lire n'importe
+  // quel message par son UUID (expéditeur, conversation, horodatage, et le
+  // contenu en clair pour tout ce qui n'est pas chiffré de bout en bout).
+  async getById(messageId: string, userId: string): Promise<Message | null> {
+    await this.assertMessageAccess(messageId, userId);
+    return this.getByIdUnchecked(messageId);
+  }
+
+  /** Lecture sans contrôle d'accès — usage interne uniquement (après vérification). */
+  private async getByIdUnchecked(messageId: string): Promise<Message | null> {
     const [rows] = await this.db.query(
       `SELECT m.id, m.conversation_id, m.sender_id,
               m.content, m.sender_content, m.e2ee_type,
@@ -239,7 +246,8 @@ export class MessageService {
       [dto.content, dto.senderContent ?? null, dto.e2eeType ?? null, messageId]
     );
 
-    return this.getById(messageId, senderId);
+    // L'appartenance est déjà établie : le WHERE ci-dessus exige sender_id = senderId.
+    return this.getByIdUnchecked(messageId);
   }
 
   // Supprimer un message (soft delete)
@@ -311,6 +319,24 @@ export class MessageService {
   }
 
   // Helpers privés
+
+  /** Réactions de plusieurs messages en une requête — évite le N+1 sur les listes. */
+  private async getReactionsBulk(messageIds: string[]): Promise<Map<string, Reaction[]>> {
+    const byMessage = new Map<string, Reaction[]>();
+    if (messageIds.length === 0) return byMessage;
+    const placeholders = messageIds.map(() => '?').join(',');
+    const [rows] = await this.db.query(
+      `SELECT message_id, user_id, emoji, created_at FROM message_reactions WHERE message_id IN (${placeholders})`,
+      messageIds,
+    );
+    for (const r of rows as any[]) {
+      const list = byMessage.get(r.message_id) ?? [];
+      list.push({ userId: r.user_id, emoji: r.emoji, createdAt: r.created_at });
+      byMessage.set(r.message_id, list);
+    }
+    return byMessage;
+  }
+
   private async getReactions(messageId: string): Promise<Reaction[]> {
     const [rows] = await this.db.query(
       'SELECT user_id, emoji, created_at FROM message_reactions WHERE message_id = ?',

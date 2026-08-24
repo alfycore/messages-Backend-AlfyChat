@@ -36,8 +36,25 @@ export function getRedisClient(config?: RedisConfig) {
       if (keys.length) await client!.del(...keys);
     },
 
-    async keys(pattern: string): Promise<string[]> {
-      return client!.keys(pattern);
+    /**
+     * Incrémente le compteur de version d'une conversation.
+     *
+     * Remplace l'invalidation par motif : `KEYS msg:<conv>:*` parcourait tout
+     * l'espace de clés en BLOQUANT Redis — partagé par le gateway (adapter
+     * Socket.IO, présence, rate limiting) et par tous les microservices. La
+     * clé de cache embarque désormais la version : un simple INCR périme
+     * l'ancienne, qui expire ensuite d'elle-même via son TTL.
+     */
+    async bumpCacheVersion(conversationId: string): Promise<number> {
+      const v = await client!.incr(`msgver:${conversationId}`);
+      // Le compteur n'a pas à vivre éternellement : une conversation inactive
+      // repart de zéro sans risque, ses clés de cache ayant déjà expiré.
+      await client!.expire(`msgver:${conversationId}`, 86400);
+      return v;
+    },
+
+    async getCacheVersion(conversationId: string): Promise<string> {
+      return (await client!.get(`msgver:${conversationId}`)) ?? '0';
     },
   };
 }

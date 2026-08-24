@@ -42,6 +42,17 @@ const voiceUpload = multer({
 // TTL du cache messages (secondes). Court pour rester cohérent avec le temps réel.
 const MSG_CACHE_TTL = 4;
 
+// Identifiant de MP déterministe : dm_<uuidA>_<uuidB>, UUID triés.
+// `conversationId.includes(userId)` acceptait un identifiant contenant l'UUID
+// n'importe où : on décompose et on compare exactement.
+const DM_ID_RE = /^dm_([0-9a-fA-F-]{36})_([0-9a-fA-F-]{36})$/;
+
+function isDmParticipant(conversationId: string, userId: string): boolean {
+  const m = DM_ID_RE.exec(conversationId);
+  if (!m) return false;
+  return m[1] === userId || m[2] === userId;
+}
+
 export const messagesRouter = Router();
 
 // Récupérer les messages (par channelId ou recipientId)
@@ -66,8 +77,7 @@ messagesRouter.get('/',
 
         // Vérifier l'appartenance avant de servir les messages
         if (cid.startsWith('dm_')) {
-          // Format dm_UUID1_UUID2 — vérifier que userId est l'un des deux
-          if (!cid.includes(userId)) {
+          if (!isDmParticipant(cid, userId)) {
             return res.status(403).json({ error: 'Accès non autorisé' });
           }
         } else {
@@ -89,9 +99,10 @@ messagesRouter.get('/',
         return res.json([]);
       }
 
-      // ── Cache Redis ──────────────────────────────────────
+      // ── Cache Redis (cle versionnee — voir bumpCacheVersion) ─────────────
       const redis = getRedisClient();
-      const cacheKey = `msg:${conversationId}:${limit}:${before || ''}`;
+      const cacheVersion = await redis.getCacheVersion(conversationId).catch(() => '0');
+      const cacheKey = `msg:${conversationId}:${cacheVersion}:${limit}:${before || ''}`;
       try {
         const cached = await redis.get(cacheKey);
         if (cached) {
@@ -205,7 +216,7 @@ messagesRouter.get('/search',
       const conversationId = req.query.conversationId as string;
       // Vérifier l'accès
       if (conversationId.startsWith('dm_')) {
-        if (!conversationId.includes(userId)) {
+        if (!isDmParticipant(conversationId, userId)) {
           return res.status(403).json({ error: 'Accès non autorisé' });
         }
       } else {
@@ -238,7 +249,7 @@ messagesRouter.get('/conversation/:conversationId',
       const userId = (req as any).userId;
       const { conversationId } = req.params;
       if (conversationId.startsWith('dm_')) {
-        if (!conversationId.includes(userId)) {
+        if (!isDmParticipant(conversationId, userId)) {
           return res.status(403).json({ error: 'Accès non autorisé' });
         }
       } else {
@@ -339,11 +350,11 @@ messagesRouter.post('/voice',
           [conversationId, userId]
         );
         if ((rows as any[]).length === 0) {
-          fs.unlinkSync(req.file.path);
+          await fs.promises.unlink(req.file.path).catch(() => {});
           return res.status(403).json({ error: 'Accès non autorisé' });
         }
-      } else if (!conversationId.includes(userId)) {
-        fs.unlinkSync(req.file.path);
+      } else if (!isDmParticipant(conversationId, userId)) {
+        await fs.promises.unlink(req.file.path).catch(() => {});
         return res.status(403).json({ error: 'Accès non autorisé' });
       }
 
@@ -357,12 +368,9 @@ messagesRouter.post('/voice',
         [messageId, conversationId, userId, voiceUrl, voiceDuration]
       );
 
-      // Invalider le cache Redis de la conversation
-      const redis = getRedisClient();
-      const cachePattern = `msg:${conversationId}:*`;
+      // Invalider le cache Redis de la conversation (INCR, pas de KEYS)
       try {
-        const keys = await redis.keys(cachePattern);
-        if (keys.length) await redis.del(...keys);
+        await getRedisClient().bumpCacheVersion(conversationId);
       } catch { /* non-bloquant */ }
 
       res.status(201).json({
@@ -376,7 +384,7 @@ messagesRouter.post('/voice',
       });
     } catch (error) {
       if (req.file?.path) {
-        try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+        await fs.promises.unlink(req.file.path).catch(() => {});
       }
       console.error('Erreur message vocal:', error);
       res.status(500).json({ error: 'Erreur serveur' });

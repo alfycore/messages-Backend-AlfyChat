@@ -199,6 +199,21 @@ export async function runMigrations(db: ReturnType<typeof getDatabaseClient>): P
     console.log('Index composite migration warning:', e?.message ?? e);
   }
 
+  // conversation_participants a pour cle primaire (conversation_id, user_id).
+  // `getByUser` filtre sur user_id SEUL : le prefixe de la PK ne s'applique pas,
+  // donc scan complet de la table a chaque connexion socket et a chaque
+  // chargement de la liste de MP.
+  try {
+    const [idxCp]: any = await db.execute(
+      `SELECT COUNT(*) as cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = 'conversation_participants' AND index_name = 'idx_cp_user'`
+    );
+    if (!idxCp || idxCp[0]?.cnt === 0) {
+      await db.execute(`CREATE INDEX idx_cp_user ON conversation_participants (user_id)`);
+    }
+  } catch (e: any) {
+    console.log('Index conversation_participants migration warning:', e?.message ?? e);
+  }
+
   // Index sur message_reactions.message_id pour le batch fetch
   try {
     const [idxRows3]: any = await db.execute(

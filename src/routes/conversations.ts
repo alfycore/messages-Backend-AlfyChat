@@ -7,6 +7,7 @@ import { body, param } from 'express-validator';
 import { conversationController } from '../controllers/conversations.controller';
 import { validateRequest } from '../middleware/validate';
 import { authMiddleware } from '../middleware/auth';
+import { internalOnly } from '../middleware/internal';
 
 import { getDatabaseClient } from '../database';
 import { ConversationService } from '../services/conversations.service';
@@ -16,15 +17,12 @@ const conversationService = new ConversationService();
 
 // ============ GET / — Toutes les conversations de l'utilisateur connecté ============
 conversationsRouter.get('/',
-  async (req, res, next) => {
-    // Accepter soit un JWT (frontend), soit un x-user-id header (appel gateway interne)
-    const internalUserId = req.headers['x-user-id'] as string | undefined;
-    if (internalUserId && !req.headers.authorization) {
-      (req as any).userId = internalUserId;
-      return next();
-    }
-    return authMiddleware(req, res, next);
-  },
+  // `authMiddleware` accepte déjà les deux cas : JWT du frontend, OU
+  // x-user-id accompagné d'un x-internal-secret valide (appel gateway).
+  // Le raccourci précédent acceptait x-user-id SANS vérifier aucun secret :
+  // n'importe qui pouvait lire les conversations de n'importe quel compte en
+  // tapant le service directement.
+  authMiddleware,
   async (req, res) => {
     try {
       const userId = (req as any).userId;
@@ -54,6 +52,12 @@ conversationsRouter.get('/',
           createdAt: conv.createdAt,
           updatedAt: conv.updatedAt,
           lastMessage: (conv as any).lastMessage ?? null,
+          // Le client déchiffre lui-même l'aperçu : il lui faut l'expéditeur,
+          // la copie qui lui est destinée et le format de chiffrement.
+          lastMessageId: (conv as any).lastMessageId ?? null,
+          lastMessageSenderId: (conv as any).lastMessageSenderId ?? null,
+          lastMessageSenderContent: (conv as any).lastMessageSenderContent ?? null,
+          lastMessageE2eeType: (conv as any).lastMessageE2eeType ?? null,
           lastMessageAt: (conv as any).lastMessageAt ?? conv.updatedAt,
         };
       });
@@ -68,8 +72,9 @@ conversationsRouter.get('/',
 
 // ============ POST / — Créer une conversation ============
 conversationsRouter.post('/',
+  authMiddleware,
   body('type').isIn(['dm', 'group']),
-  body('participantIds').isArray({ min: 2 }),
+  body('participantIds').isArray({ min: 2, max: 100 }),
   body('participantIds.*').isString(),
   body('name').optional().isString().isLength({ max: 100 }),
   body('avatarUrl').optional().isString(),
@@ -155,8 +160,12 @@ conversationsRouter.patch('/:conversationId',
   conversationController.update.bind(conversationController)
 );
 
-// ============ GET /:conversationId/participants — Liste des participants (interne, pas d'auth) ============
+// ============ GET /:conversationId/participants — Liste des participants ============
+// Réservé aux appels inter-services : le gateway s'en sert pour router les
+// notifications push. Sans `internalOnly`, c'était une énumération publique des
+// membres de n'importe quelle conversation.
 conversationsRouter.get('/:conversationId/participants',
+  internalOnly,
   param('conversationId').isString(),
   validateRequest,
   async (req, res) => {
@@ -170,8 +179,9 @@ conversationsRouter.get('/:conversationId/participants',
   }
 );
 
-// ============ GET /:conversationId/participants/:userId/check — Vérifier appartenance (interne) ============
+// ============ GET /:conversationId/participants/:userId/check — Vérifier appartenance ============
 conversationsRouter.get('/:conversationId/participants/:userId/check',
+  internalOnly,
   param('conversationId').isString(),
   param('userId').isString(),
   validateRequest,

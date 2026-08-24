@@ -58,6 +58,12 @@ export interface Conversation {
   // lastMessage peut être un objet Message complet (sur endpoints détaillés)
   // ou une simple preview (string) lorsqu'on retourne uniquement le contenu.
   lastMessage?: Message | string | null;
+  /** Métadonnées du dernier message — permettent au client d'en déchiffrer l'aperçu. */
+  lastMessageId?: string | null;
+  lastMessageSenderId?: string | null;
+  lastMessageSenderContent?: string | null;
+  lastMessageE2eeType?: number | null;
+  lastMessageAt?: Date | string | null;
   unreadCount?: number;
   createdAt: Date;
   updatedAt: Date;

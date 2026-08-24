@@ -111,7 +111,8 @@ export class ConversationService {
 
     // Requête 3 : dernier message par conversation (batch, compatible only_full_group_by)
     const lastMsgResult = await this.db.query(
-      `SELECT m.conversation_id, m.content, m.created_at
+      `SELECT m.conversation_id, m.id, m.content, m.sender_content, m.sender_id,
+              m.e2ee_type, m.created_at
        FROM messages m
        INNER JOIN (
          SELECT conversation_id, MAX(created_at) AS max_ts
@@ -142,9 +143,27 @@ export class ConversationService {
     }
 
     // Grouper les derniers messages par conversation_id
-    const lastMessageByConv = new Map<string, { content: string; createdAt: string }>();
+    // Le ciphertext seul ne suffit pas au client : pour afficher un aperçu il
+    // lui faut savoir QUI a écrit (donc quelle copie déchiffrer, `content` pour
+    // un message reçu, `sender_content` pour un message envoyé) et sous quel
+    // format. Sans ces champs, la liste affichait « Message chiffré » partout.
+    const lastMessageByConv = new Map<string, {
+      id: string;
+      content: string;
+      senderContent: string | null;
+      senderId: string;
+      e2eeType: number | null;
+      createdAt: string;
+    }>();
     for (const lm of lastMessages) {
-      lastMessageByConv.set(lm.conversation_id, { content: lm.content, createdAt: lm.created_at });
+      lastMessageByConv.set(lm.conversation_id, {
+        id: lm.id,
+        content: lm.content,
+        senderContent: lm.sender_content ?? null,
+        senderId: lm.sender_id,
+        e2eeType: lm.e2ee_type ?? null,
+        createdAt: lm.created_at,
+      });
     }
 
     return rows.map((conv: any) => {
@@ -162,6 +181,10 @@ export class ConversationService {
         createdAt: conv.created_at,
         updatedAt: conv.updated_at,
         lastMessage: lm?.content ?? null,
+        lastMessageId: lm?.id ?? null,
+        lastMessageSenderId: lm?.senderId ?? null,
+        lastMessageSenderContent: lm?.senderContent ?? null,
+        lastMessageE2eeType: lm?.e2eeType ?? null,
         lastMessageAt: lm?.createdAt ?? conv.updated_at,
       } as Conversation;
     });

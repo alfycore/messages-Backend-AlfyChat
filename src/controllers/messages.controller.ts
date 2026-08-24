@@ -50,10 +50,11 @@ export class MessageController {
       logger.info(`Message créé: ${message.id} (E2EE)`);
       res.status(201).json(message);
 
-      // Invalider le cache Redis pour cette conversation (fire-and-forget)
+      // Invalider le cache Redis pour cette conversation (fire-and-forget).
+      // L'ancienne version ne supprimait QUE `msg:<conv>:50:` : toutes les
+      // autres pages restaient servies depuis un cache perime.
       try {
-        const redis = getRedisClient();
-        await redis.del(`msg:${conversationId}:50:`);
+        await getRedisClient().bumpCacheVersion(conversationId);
       } catch { /* non-bloquant */ }
     } catch (error: any) {
       logger.error('Erreur création message:', error);

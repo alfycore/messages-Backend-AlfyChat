@@ -17,12 +17,27 @@ export class ConversationController {
   async create(req: Request, res: Response) {
     try {
       const { type, participantIds, name, avatarUrl, isOpen } = req.body;
-      const userId = req.headers['x-user-id'] as string;
+      const userId = (req as any).userId || (req.headers['x-user-id'] as string);
+      if (!userId) {
+        return res.status(401).json({ error: 'Non authentifié' });
+      }
+
+      // Le créateur doit faire partie de la conversation : sans ce contrôle, un
+      // compte pouvait fabriquer des groupes entre inconnus (spam / harcèlement).
+      const uniqueParticipants = Array.from(
+        new Set<string>([userId, ...(Array.isArray(participantIds) ? participantIds : [])].filter(
+          (id): id is string => typeof id === 'string' && id.length > 0,
+        )),
+      );
+      if (uniqueParticipants.length < 2) {
+        return res.status(400).json({ error: 'Au moins deux participants sont requis' });
+      }
+
       const ownerId = type === 'group' ? userId : undefined;
 
       const conversation = await conversationService.create({
         type,
-        participantIds,
+        participantIds: uniqueParticipants,
         name,
         avatarUrl,
         ownerId,
