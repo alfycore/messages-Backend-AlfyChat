@@ -6,9 +6,32 @@ import { Request, Response } from 'express';
 import { ConversationService } from '../services/conversations.service';
 import { MessageService } from '../services/messages.service';
 import { logger } from '../utils/logger';
+import { getDatabaseClient } from '../database';
 
 const conversationService = new ConversationService();
 const messageService = new MessageService();
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_GROUP_SIZE = 100;
+
+/**
+ * Identifiants (parmi `candidateIds`) qui ont bloqué `requesterId` ou que
+ * `requesterId` a bloqués. Un compte bloqué pouvait contourner le blocage en
+ * ajoutant sa victime à un groupe, puis lui écrire librement.
+ */
+async function blockedAmong(requesterId: string, candidateIds: string[]): Promise<Set<string>> {
+  if (candidateIds.length === 0) return new Set();
+  const placeholders = candidateIds.map(() => '?').join(',');
+  const [rows] = await getDatabaseClient().query(
+    `SELECT user_id, friend_id FROM friends
+     WHERE status = 'blocked'
+       AND ((user_id IN (${placeholders}) AND friend_id = ?) OR (user_id = ? AND friend_id IN (${placeholders})))`,
+    [...candidateIds, requesterId, requesterId, ...candidateIds]
+  );
+  const out = new Set<string>();
+  for (const r of rows as any[]) out.add(r.user_id === requesterId ? r.friend_id : r.user_id);
+  return out;
+}
 
 export class ConversationController {
   // ============ CRÉATION ============
@@ -24,13 +47,22 @@ export class ConversationController {
 
       // Le créateur doit faire partie de la conversation : sans ce contrôle, un
       // compte pouvait fabriquer des groupes entre inconnus (spam / harcèlement).
-      const uniqueParticipants = Array.from(
+      let uniqueParticipants = Array.from(
         new Set<string>([userId, ...(Array.isArray(participantIds) ? participantIds : [])].filter(
-          (id): id is string => typeof id === 'string' && id.length > 0,
+          (id): id is string => typeof id === 'string' && UUID_RE.test(id),
         )),
       );
+      // Les comptes qui ont bloqué le créateur (ou qu'il a bloqués) sont écartés.
+      const blocked = await blockedAmong(userId, uniqueParticipants.filter((id) => id !== userId));
+      uniqueParticipants = uniqueParticipants.filter((id) => !blocked.has(id));
       if (uniqueParticipants.length < 2) {
         return res.status(400).json({ error: 'Au moins deux participants sont requis' });
+      }
+      if (uniqueParticipants.length > MAX_GROUP_SIZE) {
+        return res.status(400).json({ error: `Un groupe compte au plus ${MAX_GROUP_SIZE} participants` });
+      }
+      if (type === 'dm' && uniqueParticipants.length !== 2) {
+        return res.status(400).json({ error: 'Un MP compte exactement deux participants' });
       }
 
       const ownerId = type === 'group' ? userId : undefined;
@@ -140,6 +172,15 @@ export class ConversationController {
         return res.status(403).json({ error: 'Accès non autorisé' });
       }
 
+      // Ouvrir / fermer le groupe est réservé au propriétaire : un simple
+      // membre rouvrait un groupe fermé pour y ajouter qui il voulait.
+      if (isOpen !== undefined) {
+        const role = await conversationService.getParticipantRole(conversationId, userId);
+        if (role !== 'owner') {
+          return res.status(403).json({ error: 'Seul le propriétaire peut ouvrir ou fermer le groupe' });
+        }
+      }
+
       await conversationService.update(conversationId, { name, avatarUrl, isOpen });
       const updated = await conversationService.getById(conversationId);
       res.json(updated);
@@ -166,10 +207,20 @@ export class ConversationController {
 
       // En mode Fermé, seul le propriétaire peut ajouter des membres
       const conversation = await conversationService.getById(conversationId);
-      if (conversation?.type === 'group' && conversation.isOpen === false) {
-        if (conversation.ownerId !== requesterId) {
-          return res.status(403).json({ error: 'Ce groupe est fermé. Seul le propriétaire peut ajouter des membres.' });
-        }
+      if (conversation?.type !== 'group') {
+        return res.status(400).json({ error: 'Seuls les groupes acceptent de nouveaux membres' });
+      }
+      if (conversation.isOpen === false && conversation.ownerId !== requesterId) {
+        return res.status(403).json({ error: 'Ce groupe est fermé. Seul le propriétaire peut ajouter des membres.' });
+      }
+      if (typeof userId !== 'string' || !UUID_RE.test(userId)) {
+        return res.status(400).json({ error: 'userId invalide' });
+      }
+      if ((await blockedAmong(requesterId, [userId])).size > 0) {
+        return res.status(403).json({ error: 'Impossible d\'ajouter cet utilisateur' });
+      }
+      if ((await conversationService.countParticipants(conversationId)) >= MAX_GROUP_SIZE) {
+        return res.status(400).json({ error: `Un groupe compte au plus ${MAX_GROUP_SIZE} participants` });
       }
 
       await conversationService.addParticipant(conversationId, userId);

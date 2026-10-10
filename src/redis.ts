@@ -36,6 +36,14 @@ export function getRedisClient(config?: RedisConfig) {
       if (keys.length) await client!.del(...keys);
     },
 
+    async incr(key: string): Promise<number> {
+      return client!.incr(key);
+    },
+
+    async expire(key: string, seconds: number): Promise<void> {
+      await client!.expire(key, seconds);
+    },
+
     /**
      * Incrémente le compteur de version d'une conversation.
      *

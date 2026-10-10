@@ -9,7 +9,9 @@ import { validateRequest } from '../middleware/validate';
 import { authMiddleware } from '../middleware/auth';
 import { internalOnly } from '../middleware/internal';
 import { DMArchiveService } from '../services/dm-archive.service';
-import { ExternalDbService } from '../services/external-db.service';
+import { ExternalDbService, assertPublicDbHost } from '../services/external-db.service';
+import { getDatabaseClient } from '../database';
+import { getRedisClient } from '../redis';
 import { logger } from '../utils/logger';
 
 const dmArchiveService = new DMArchiveService();
@@ -17,11 +19,53 @@ const externalDbService = new ExternalDbService();
 
 export const archiveRouter = Router();
 
+// Toutes ces routes acceptaient n'importe quel conversationId / messageId :
+// statistiques, quotas et messages archivés d'une conversation tierce étaient
+// lisibles par tout compte authentifié.
+const DM_ID_RE = /^dm_([0-9a-fA-F-]{36})_([0-9a-fA-F-]{36})$/;
+
+async function canAccessConversation(conversationId: string, userId: string): Promise<boolean> {
+  if (!conversationId || !userId) return false;
+  const m = DM_ID_RE.exec(conversationId);
+  if (m) return m[1] === userId || m[2] === userId;
+  const [rows] = await getDatabaseClient().query(
+    'SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND user_id = ? LIMIT 1',
+    [conversationId, userId]
+  );
+  return (rows as any[]).length > 0;
+}
+
+/** Middleware : l'appelant doit participer à :conversationId. */
+async function requireConversationAccess(req: any, res: any, next: any) {
+  try {
+    if (!(await canAccessConversation(req.params.conversationId, req.userId))) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
+    next();
+  } catch {
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+}
+
+/** Plafond par utilisateur des tests de connexion sortante (sonde réseau). */
+async function allowExternalDbAttempt(userId: string): Promise<boolean> {
+  try {
+    const redis = getRedisClient();
+    const key = `extdb:attempts:${userId}`;
+    const count = await redis.incr(key);
+    if (count === 1) await redis.expire(key, 3600);
+    return count <= 10;
+  } catch {
+    return false;
+  }
+}
+
 // Récupérer le statut d'archive d'une conversation DM
 archiveRouter.get('/status/:conversationId',
   authMiddleware,
   param('conversationId').isString().notEmpty(),
   validateRequest,
+  requireConversationAccess,
   async (req, res) => {
     try {
       const { conversationId } = req.params;
@@ -39,6 +83,7 @@ archiveRouter.get('/stats/:conversationId',
   authMiddleware,
   param('conversationId').isString().notEmpty(),
   validateRequest,
+  requireConversationAccess,
   async (req, res) => {
     try {
       const { conversationId } = req.params;
@@ -56,6 +101,7 @@ archiveRouter.get('/quota/:conversationId',
   authMiddleware,
   param('conversationId').isString().notEmpty(),
   validateRequest,
+  requireConversationAccess,
   async (req, res) => {
     try {
       const { conversationId } = req.params;
@@ -78,6 +124,10 @@ archiveRouter.post('/confirm',
     try {
       const userId = (req as any).userId;
       const { conversationId, archiveLogId } = req.body;
+
+      if (!(await canAccessConversation(conversationId, userId))) {
+        return res.status(403).json({ error: 'Accès non autorisé' });
+      }
 
       const allConfirmed = await dmArchiveService.confirmArchive(
         conversationId,
@@ -109,7 +159,9 @@ archiveRouter.get('/message/:messageId',
       const { messageId } = req.params;
       const cached = await dmArchiveService.getCachedArchivedMessage(messageId);
 
-      if (cached) {
+      // Le message mis en cache porte sa conversation : on ne le sert qu'à ses
+      // participants (n'importe quel messageId était lisible).
+      if (cached && await canAccessConversation(String((cached as any).conversationId ?? ''), (req as any).userId)) {
         res.json({ source: 'cache', message: cached });
       } else {
         // Le message n'est pas en cache → il faut demander aux peers via WebSocket
@@ -129,7 +181,14 @@ archiveRouter.post('/cache',
   validateRequest,
   async (req, res) => {
     try {
-      const { messages } = req.body;
+      // Normalisation : le gateway envoie `id`, le service indexait sur
+      // `messageId` (clé « undefined »). Seuls les messages avec une
+      // conversation et un identifiant valides sont mis en cache.
+      const messages = (req.body.messages as any[])
+        .slice(0, 200)
+        .map((m) => ({ ...m, messageId: m?.messageId ?? m?.id }))
+        .filter((m) => typeof m.messageId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(m.messageId)
+          && typeof m.conversationId === 'string' && m.conversationId.length <= 128);
       await dmArchiveService.cacheBulkArchivedMessages(messages);
       res.json({ success: true, cached: messages.length });
     } catch (error) {
@@ -139,9 +198,10 @@ archiveRouter.post('/cache',
   }
 );
 
-// Déclencher la maintenance manuelle (admin only)
+// Déclencher la maintenance manuelle — interne uniquement (tout compte
+// authentifié pouvait lancer cette opération coûteuse et destructrice).
 archiveRouter.post('/maintenance',
-  authMiddleware,
+  internalOnly,
   async (req, res) => {
     try {
       const result = await dmArchiveService.runDailyMaintenance();
@@ -192,10 +252,20 @@ archiveRouter.post('/external-db',
       const userId = (req as any).userId;
       const { host, port = 3306, user, password, database } = req.body;
 
+      // L'hôte est fourni par l'utilisateur : le service s'y connecte depuis le
+      // réseau interne. Sans garde, c'était une sonde (SSRF) vers les bases et
+      // services internes, avec les messages d'erreur bruts en retour.
+      if (!(await allowExternalDbAttempt(userId))) {
+        return res.status(429).json({ error: 'Trop de tentatives, réessayez plus tard' });
+      }
+      if (!(await assertPublicDbHost(host))) {
+        return res.status(400).json({ error: 'Hôte refusé — une adresse publique est requise' });
+      }
+
       // Tester la connexion avant de sauvegarder
       const test = await externalDbService.testConnection(host, port, user, password, database);
       if (!test.ok) {
-        return res.status(400).json({ error: `Connexion impossible : ${test.error}` });
+        return res.status(400).json({ error: 'Connexion impossible avec ces paramètres' });
       }
 
       await externalDbService.saveConfig(userId, host, port, user, password, database);
@@ -218,9 +288,17 @@ archiveRouter.post('/external-db/test',
   validateRequest,
   async (req, res) => {
     try {
+      const userId = (req as any).userId;
       const { host, port = 3306, user, password, database } = req.body;
+      if (!(await allowExternalDbAttempt(userId))) {
+        return res.status(429).json({ error: 'Trop de tentatives, réessayez plus tard' });
+      }
+      if (!(await assertPublicDbHost(host))) {
+        return res.status(400).json({ ok: false, error: 'Hôte refusé — une adresse publique est requise' });
+      }
       const result = await externalDbService.testConnection(host, port, user, password, database);
-      res.json(result);
+      // Pas de message d'erreur brut (il révélait l'état du réseau interne).
+      res.json(result.ok ? { ok: true } : { ok: false, error: 'Connexion impossible avec ces paramètres' });
     } catch (error) {
       logger.error('Erreur test DB externe:', error);
       res.status(500).json({ error: 'Erreur serveur' });
@@ -238,6 +316,9 @@ archiveRouter.get('/external-db/messages',
 
       if (!conversationId) {
         return res.status(400).json({ error: 'conversationId requis' });
+      }
+      if (!(await canAccessConversation(conversationId, userId))) {
+        return res.status(403).json({ error: 'Accès non autorisé' });
       }
 
       const messages = await externalDbService.fetchFromExternalDb(userId, conversationId, {

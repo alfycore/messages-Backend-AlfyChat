@@ -282,9 +282,9 @@ messagesRouter.get('/:messageId',
 messagesRouter.patch('/:messageId',
   authMiddleware,
   param('messageId').isUUID(),
-  body('content').notEmpty().isLength({ max: 65535 }),
-  body('senderContent').optional().isString(),
-  body('e2eeType').optional().isIn([1, 3]),
+  body('content').notEmpty().isLength({ max: 131072 }),
+  body('senderContent').optional().isString().isLength({ max: 131072 }),
+  body('e2eeType').optional().toInt().isIn([1, 3]),
   validateRequest,
   messageController.update.bind(messageController)
 );

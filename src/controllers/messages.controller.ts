@@ -111,10 +111,17 @@ export class MessageController {
   async update(req: Request, res: Response) {
     try {
       const { messageId } = req.params;
-      const { content } = req.body;
+      const { content, senderContent, e2eeType } = req.body;
       const senderId = req.headers['x-user-id'] as string;
 
-      const message = await messageService.update(messageId, senderId, { content });
+      // senderContent / e2eeType étaient ignorés (et la copie chiffrée de
+      // l'expéditeur effacée) : éditer un message chiffré le rendait illisible
+      // pour son auteur.
+      const message = await messageService.update(messageId, senderId, {
+        content,
+        ...(typeof senderContent === 'string' ? { senderContent } : {}),
+        ...(Number(e2eeType) === 1 || Number(e2eeType) === 3 ? { e2eeType: Number(e2eeType) as 1 | 3 } : {}),
+      });
 
       if (!message) {
         return res.status(404).json({ error: 'Message non trouvé ou non autorisé' });
