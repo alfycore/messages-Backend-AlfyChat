@@ -120,7 +120,7 @@ export class MessageController {
       const message = await messageService.update(messageId, senderId, {
         content,
         ...(typeof senderContent === 'string' ? { senderContent } : {}),
-        ...(Number(e2eeType) === 1 || Number(e2eeType) === 3 ? { e2eeType: Number(e2eeType) as 1 | 3 } : {}),
+        ...([1, 3, 4].includes(Number(e2eeType)) ? { e2eeType: Number(e2eeType) as 1 | 3 | 4 } : {}),
       });
 
       if (!message) {

@@ -196,7 +196,7 @@ messagesRouter.post('/',
   body('senderId').isUUID(),
   body('content').notEmpty().isLength({ max: 131072 }),      // ciphertext Signal (ECDH peut être grand)
   body('senderContent').optional().isString().isLength({ max: 131072 }),
-  body('e2eeType').optional().toInt().isIn([1, 3]),                  // type Signal
+  body('e2eeType').optional().toInt().isIn([1, 3, 4]),               // 1/3 Signal, 4 = enveloppe de groupe (e2e1:)
   body('replyToId').optional().isUUID(),
   validateRequest,
   messageController.create.bind(messageController)
@@ -284,7 +284,7 @@ messagesRouter.patch('/:messageId',
   param('messageId').isUUID(),
   body('content').notEmpty().isLength({ max: 131072 }),
   body('senderContent').optional().isString().isLength({ max: 131072 }),
-  body('e2eeType').optional().toInt().isIn([1, 3]),
+  body('e2eeType').optional().toInt().isIn([1, 3, 4]),
   validateRequest,
   messageController.update.bind(messageController)
 );

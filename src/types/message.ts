@@ -22,7 +22,7 @@ export interface Message {
    *   3 = PreKeyWhisperMessage (premier message, établit la session X3DH)
    *   undefined = message non chiffré (canaux serveur, anciens messages)
    */
-  e2eeType?: 1 | 3;
+  e2eeType?: 1 | 3 | 4; // 4 = enveloppe de groupe (e2e1:)
   replyToId?: string;
   isEdited: boolean;
   isDeleted: boolean;
@@ -90,7 +90,7 @@ export interface CreateMessageDTO {
   /** Ciphertext Signal pour l'expéditeur (base64) */
   senderContent?: string;
   /** Type Signal : 1 = Whisper, 3 = PreKey */
-  e2eeType?: 1 | 3;
+  e2eeType?: 1 | 3 | 4; // 4 = enveloppe de groupe (e2e1:)
   replyToId?: string;
 }
 
@@ -100,7 +100,7 @@ export interface UpdateMessageDTO {
   /** Nouveau ciphertext Signal pour l'expéditeur */
   senderContent?: string;
   /** Type Signal : 1 = Whisper, 3 = PreKey */
-  e2eeType?: 1 | 3;
+  e2eeType?: 1 | 3 | 4; // 4 = enveloppe de groupe (e2e1:)
 }
 
 export interface CreateConversationDTO {
