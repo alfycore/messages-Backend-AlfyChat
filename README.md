@@ -2,8 +2,7 @@
 
 Microservice de gestion des messages pour AlfyChat.
 
-![Node.js](https://img.shields.io/badge/Bun-1.2-black?logo=bun)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)
 ![License](https://img.shields.io/badge/License-Source_Available-blue)
 
 ## Rôle
@@ -14,9 +13,8 @@ Ce service gère l'ensemble de la messagerie : messages directs (DM), messages d
 
 | Catégorie | Technologies |
 |-----------|-------------|
-| Runtime | Bun |
-| Langage | TypeScript |
-| API | Express |
+| Langage | Go 1.26 |
+| API | net/http (stdlib) |
 | Auth | JWT |
 | Cache | Redis |
 | Base de données | MySQL 8 |
@@ -38,7 +36,7 @@ Frontend (:4000)  →  Gateway (:3000)  →  Microservices
 
 ### Prérequis
 
-- [Bun](https://bun.sh/) ≥ 1.2
+- [Go](https://go.dev/) ≥ 1.26
 - MySQL 8
 - Redis 7
 
@@ -56,23 +54,23 @@ JWT_SECRET=
 SERVICE_REGISTRY_URL=http://gateway:3000
 ```
 
-### Installation
-
-```bash
-bun install
-```
-
 ### Développement
 
 ```bash
-bun run dev
+go run .
 ```
 
 ### Build production
 
 ```bash
-bun run build
-bun run start
+go build -o bin/service .
+./bin/service
+```
+
+### Tests
+
+```bash
+go test ./...
 ```
 
 ### Docker
@@ -84,16 +82,10 @@ docker compose up messages
 ## Structure du projet
 
 ```
-src/
-├── database.ts          # Connexion MySQL
-├── redis.ts             # Connexion Redis
-├── index.ts             # Point d'entrée
-├── controllers/         # Logique métier (messages, conversations, notifications)
-├── routes/              # Définition des routes Express
-├── services/            # Services (cache, livraison optimiste)
-├── middleware/          # Auth JWT, rate limiting
-├── types/               # Types TypeScript
-└── utils/               # Utilitaires
+main.go                  # Point d'entrée
+internal/
+├── messages/            # Messages, conversations, notifications, archivage, base externe
+└── platform/            # Socle commun aux services Go
 ```
 
 ## Contribution
